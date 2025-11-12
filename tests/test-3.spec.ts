@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import axios from 'axios';
 
 // TypeScript interfaces
 interface FIIDIIActivityData {
@@ -15,12 +16,17 @@ interface CommodityRowData {
   [key: string]: string;
 }
 
+// UPDATED INTERFACE
 interface CurrencyData {
   symbol: string;
   name: string;
   price: string;
+  priceChange: string;      // NEW: Price change value
+  percentChange: string;    // NEW: Percent change value
   url: string;
 }
+
+const EQUID_API_TOKEN = 'd6391becdaf54eb9a3352f3e4d0cc56772f1e178f3fd6702482edb419d172113acd018c5d1a5e5899fcd5bcd40e6ffbb8e79f3c7871a1e72b27dbaec953f063dadd3c95c6c0ca767079516ac7f122e2a5aadcf9c9caa067898349e0dfc9c7b49c95082ef5185ed7e5411cf81e38174534d941ce77d99910bd6aecc2d0687f9ab';
 
 // Configure test
 test.use({
@@ -47,8 +53,8 @@ test.use({
 // Extract FII/DII data
 async function extractFIIDIIActivityData(page): Promise<FIIDIIActivityData> {
   console.log('\n--- Starting FII/DII Data Extraction ---');
-  
-  await page.goto('https://www.moneycontrol.com/stocks/marketstats/fii_dii_activity/index.php', {
+
+  await page.goto('https://www.moneycontrol.com/stocks/marketstats/fii_dii_activity/index.php ', {
     waitUntil: 'domcontentloaded',
     timeout: 60000
   });
@@ -66,10 +72,10 @@ async function extractFIIDIIActivityData(page): Promise<FIIDIIActivityData> {
 
   const firstFiiLeftDiv = page.locator('.fidileft').first();
   await expect(firstFiiLeftDiv).toBeVisible({ timeout: 20000 });
-  
+
   const secondTable = firstFiiLeftDiv.getByRole('table').nth(1);
   await expect(secondTable).toBeVisible({ timeout: 15000 });
-  
+
   const firstRowCells = await secondTable.locator('tbody tr').first().locator('td').allInnerTexts();
 
   const [
@@ -96,12 +102,12 @@ async function extractFIIDIIActivityData(page): Promise<FIIDIIActivityData> {
 // Extract commodity data
 async function extractCommodityData(page): Promise<CommodityRowData[]> {
   console.log('\n--- Starting Commodity Data Extraction ---');
-  
-  await page.goto('https://www.moneycontrol.com/commodity/', {
+
+  await page.goto('https://www.moneycontrol.com/commodity/ ', {
     waitUntil: 'domcontentloaded',
     timeout: 60000
   });
-  
+
   await page.waitForTimeout(2000);
 
   try {
@@ -115,7 +121,7 @@ async function extractCommodityData(page): Promise<CommodityRowData[]> {
 
   await page.getByRole('listitem').filter({ hasText: 'Spot Rates' }).click();
   await page.getByRole('heading', { name: 'MAJOR COMMODITIES' }).click();
-  
+
   const table = page.getByRole('table').first();
   await expect(table).toBeVisible({ timeout: 15000 });
 
@@ -129,7 +135,7 @@ async function extractCommodityData(page): Promise<CommodityRowData[]> {
 
   for (const row of dataRows) {
     const cellValues = await row.locator('td').allInnerTexts();
-    
+
     const rowData = cleanHeaders.reduce((obj: Record<string, string>, header, index) => {
       obj[header] = cellValues[index] || '';
       return obj;
@@ -141,19 +147,19 @@ async function extractCommodityData(page): Promise<CommodityRowData[]> {
   return tableData;
 }
 
-// Extract currency data with a fresh page for each URL
+// UPDATED: Extract currency data with price change and percent change
 async function extractCurrencyData(browser): Promise<CurrencyData[]> {
   console.log('\n--- Starting Currency/Index Data Extraction ---');
-  
+
   const currencyUrls = [
-    'https://finance.yahoo.com/quote/INR=X/',
-    'https://finance.yahoo.com/quote/EURINR=X/',
-    'https://finance.yahoo.com/quote/GBPINR=X/',
-    'https://finance.yahoo.com/quote/%5EDJI/',
-    'https://finance.yahoo.com/quote/%5ENDX/',
-    'https://finance.yahoo.com/quote/%5EGDAXI/',
-    'https://finance.yahoo.com/quote/%5EHSI/',
-    'https://finance.yahoo.com/quote/%5EN225/'
+    'https://finance.yahoo.com/quote/INR=X/ ',
+    'https://finance.yahoo.com/quote/EURINR=X/ ',
+    'https://finance.yahoo.com/quote/GBPINR=X/ ',
+    'https://finance.yahoo.com/quote/%5EDJI/ ',
+    'https://finance.yahoo.com/quote/%5ENDX/ ',
+    'https://finance.yahoo.com/quote/%5EGDAXI/ ',
+    'https://finance.yahoo.com/quote/%5EHSI/ ',
+    'https://finance.yahoo.com/quote/%5EN225/ '
   ];
 
   const currencyData: CurrencyData[] = [];
@@ -175,8 +181,8 @@ async function extractCurrencyData(browser): Promise<CurrencyData[]> {
     });
 
     try {
-      console.log(`Extracting data from: ${url}`);
-      
+      console.log(`\nExtracting data from: ${url}`);
+
       await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
       await page.waitForTimeout(2000);
 
@@ -191,11 +197,22 @@ async function extractCurrencyData(browser): Promise<CurrencyData[]> {
       }
 
       const symbol = decodeURIComponent(url.split('/').slice(-2)[0]);
-      
+
+      // Extract price
       const priceElement = page.locator('[data-testid="qsp-price"]');
       await priceElement.waitFor({ state: 'visible', timeout: 10000 });
       const price = await priceElement.innerText();
 
+      // UPDATED: Extract price change and percent change
+      const priceChangeElement = page.locator('[data-testid="qsp-price-change"]');
+      await priceChangeElement.waitFor({ state: 'visible', timeout: 10000 });
+      const priceChange = await priceChangeElement.innerText();
+
+      const percentChangeElement = page.locator('[data-testid="qsp-price-change-percent"]');
+      await percentChangeElement.waitFor({ state: 'visible', timeout: 10000 });
+      const percentChange = await percentChangeElement.innerText();
+
+      // Extract instrument name
       let instrumentName = symbol;
       try {
         const nameElement = page.locator('h1').first();
@@ -204,14 +221,19 @@ async function extractCurrencyData(browser): Promise<CurrencyData[]> {
         // Fallback to symbol
       }
 
-      currencyData.push({
+      const data: CurrencyData = {
         symbol: symbol,
         name: instrumentName.trim(),
         price: price.trim(),
+        priceChange: priceChange.trim(),      // NEW
+        percentChange: percentChange.trim(),  // NEW
         url: url
-      });
+      };
 
-      console.log(`✓ ${instrumentName.trim()}: ${price.trim()}`);
+      currencyData.push(data);
+
+      console.log(`✓ ${instrumentName.trim()}`);
+      console.log(`  Price: ${price.trim()} | Change: ${priceChange.trim()} | % Change: ${percentChange.trim()}`);
 
     } catch (error) {
       console.log(`✗ Failed to extract data from ${url}: ${error.message}`);
@@ -224,14 +246,46 @@ async function extractCurrencyData(browser): Promise<CurrencyData[]> {
   return currencyData;
 }
 
+function formatAllCurrencies(commodities) {
+  return commodities.reduce((acc, item) => {
+    // Create valid variable name by removing special characters
+    const key = item.symbol.replace(/[\^=]/g, '');
+
+    // Format: "price (priceChange, percentChange)"
+    acc[key] = `${item?.price || ''} (${item?.priceChange || ''}, ${item?.percentChange || ''})`;
+
+    return acc;
+  }, {});
+}
+
+function formatSelectedCommodities(commodities) {
+  const formatItem = (item) => {
+    if (!item) return null;
+    // Format: LTP (Change, Chg%)
+    return `${item.LTP} (${item.Change}, ${item['Chg%']}%)`;
+  };
+
+  const goldItem = commodities.find(c => c.Name === "GOLD");
+  const crudeoilItem = commodities.find(c => c.Name === "CRUDEOIL");
+  const silverItem = commodities.find(c => c.Name === "SILVER");
+
+  return {
+    gold: formatItem(goldItem),
+    crudeoil: formatItem(crudeoilItem),
+    silver: formatItem(silverItem)
+  };
+}
+
+
+
+
 // Main test
 test('Extract Complete Market Data', async ({ browser }) => {
-  test.setTimeout(120000); // Increase timeout to 120 seconds
-  
+  test.setTimeout(120000);
+
   try {
     console.log('🚀 Starting comprehensive data extraction from all sources...');
 
-    // Create page for Moneycontrol data
     const mcPage = await browser.newPage({
       viewport: { width: 1920, height: 1080 },
       extraHTTPHeaders: {
@@ -251,7 +305,6 @@ test('Extract Complete Market Data', async ({ browser }) => {
     const commodityData = await extractCommodityData(mcPage);
     await mcPage.close();
 
-    // Extract Currency data using fresh pages for each URL
     const currencyData = await extractCurrencyData(browser);
 
     console.log('\n\n========== COMPLETE MARKET DATA ==========\n');
@@ -270,6 +323,59 @@ test('Extract Complete Market Data', async ({ browser }) => {
     console.log(`- Commodities: ${commodityData.length} rows extracted`);
     console.log(`- Currencies/Indices: ${currencyData.length} instruments extracted`);
     console.log('\n✅ All data extracted successfully!');
+    const { INRX, EURINRX, GBPINRX, DJI, NDX, GDAXI, HSI, N225 } = formatAllCurrencies(currencyData);
+    console.log('\nFormatted Currencies/Indices:', { INRX, EURINRX, GBPINRX, DJI, NDX, GDAXI, HSI, N225 });
+    const { gold, crudeoil, silver } = formatSelectedCommodities(commodityData);
+    console.log('\nFormatted Commodities:', { gold, crudeoil, silver });
+
+    const payload = {
+      data: {
+        // Map your scraped data to Strapi fields
+        USDINR: INRX || '',
+        EURINR: EURINRX || '',
+        GBPINR: GBPINRX || '',
+        Crude: crudeoil || '',
+        Gold: gold || '',
+        Silver: silver || '',
+        DJI: DJI || '',
+        NDX: NDX || '',
+        DAX: GDAXI || '',
+        HSI: HSI || '',
+        Nikkei: N225 || '',
+        BuyValueDii: parseFloat(fiiDiiData?.GrossPurchaseDII.replace(/,/g, '')) || 0,
+        SellValueDii: parseFloat(fiiDiiData?.GrossSalesDII.replace(/,/g, '')) || 0,
+        BuyValueFii: parseFloat(fiiDiiData?.GrossPurchaseFII.replace(/,/g, '')) || 0,
+        SellValueFii: parseFloat(fiiDiiData?.GrossSalesFII.replace(/,/g, '')) || 0
+      }
+    };
+
+    try {
+      const response = await fetch(`https://admin.equivision.in/api/pre-market-updates/nqg7p30n5zan7oyw56g6b25n`, {
+        method: 'PUT', // or 'PATCH' for partial update
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${EQUID_API_TOKEN}`
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const result = await response.json();
+      console.log('Update successful:', result);
+      return result;
+
+    } catch (error) {
+      console.error('Error updating row:', error);
+      throw error;
+    }
+    // console.log('Data pushed to API:', data);
+
+
+
+
 
   } catch (error) {
     console.error('\n❌ Test failed with error:', error.message);
@@ -277,3 +383,4 @@ test('Extract Complete Market Data', async ({ browser }) => {
     throw error;
   }
 });
+
