@@ -1,35 +1,77 @@
 import { test, expect } from '@playwright/test';
 
-// Function to extract FII/DII table data
-async function extractFIIDIIActivityData(page) {
-  // Navigate to the page
+// TypeScript interfaces
+interface FIIDIIActivityData {
+  DateOfTable: string;
+  GrossPurchaseFII: string;
+  GrossSalesFII: string;
+  NetSalesFII: string;
+  GrossPurchaseDII: string;
+  GrossSalesDII: string;
+  NetSalesDII: string;
+}
+
+interface CommodityRowData {
+  [key: string]: string;
+}
+
+interface CurrencyData {
+  symbol: string;
+  name: string;
+  price: string;
+  url: string;
+}
+
+// Configure test
+test.use({
+  browserName: 'chromium',
+  viewport: { width: 1920, height: 1080 },
+  userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+  extraHTTPHeaders: {
+    'Accept-Language': 'en-US,en;q=0.9',
+    'Sec-Ch-Ua': '"Not A(Brand";v="99", "Google Chrome";v="121", "Chromium";v="121"',
+    'Sec-Ch-Ua-Mobile': '?0',
+    'Sec-Ch-Ua-Platform': '"Windows"',
+    'Sec-Fetch-Dest': 'document',
+    'Sec-Fetch-Mode': 'navigate',
+    'Sec-Fetch-Site': 'none',
+    'Sec-Fetch-User': '?1',
+    'Upgrade-Insecure-Requests': '1',
+  },
+  launchOptions: {
+    slowMo: 50,
+  },
+  headless: false,
+});
+
+// Extract FII/DII data
+async function extractFIIDIIActivityData(page): Promise<FIIDIIActivityData> {
+  console.log('\n--- Starting FII/DII Data Extraction ---');
+  
   await page.goto('https://www.moneycontrol.com/stocks/marketstats/fii_dii_activity/index.php', {
-    waitUntil: 'networkidle'
+    waitUntil: 'domcontentloaded',
+    timeout: 60000
   });
 
-  // Handle modal if it appears
+  await page.waitForTimeout(2000);
+
   try {
-    await page.waitForSelector('button:has-text("No thanks")', { timeout: 5000 });
-    await page.getByRole('button', { name: 'No thanks' }).click();
+    const noThanksButton = page.getByRole('button', { name: 'No thanks' });
+    await noThanksButton.waitFor({ state: 'visible', timeout: 5000 });
+    await noThanksButton.click();
     console.log('Modal "No thanks" button clicked.');
   } catch (error) {
     console.log('Modal did not appear or button was not found. Continuing...');
   }
 
-  // Locate the first .fidileft div
   const firstFiiLeftDiv = page.locator('.fidileft').first();
   await expect(firstFiiLeftDiv).toBeVisible({ timeout: 20000 });
-  console.log('Successfully located the first .fidileft div.');
-
-  // Locate the SECOND table
+  
   const secondTable = firstFiiLeftDiv.getByRole('table').nth(1);
   await expect(secondTable).toBeVisible({ timeout: 15000 });
-  console.log('Successfully located the second table inside .fidileft.');
-
-  // Get the array of cell values from the first data row
+  
   const firstRowCells = await secondTable.locator('tbody tr').first().locator('td').allInnerTexts();
 
-  // Use Array Destructuring to assign values to named variables
   const [
     DateOfTable,
     GrossPurchaseFII,
@@ -40,7 +82,6 @@ async function extractFIIDIIActivityData(page) {
     NetSalesDII
   ] = firstRowCells;
 
-  // Return the extracted data as an object
   return {
     DateOfTable,
     GrossPurchaseFII,
@@ -52,11 +93,21 @@ async function extractFIIDIIActivityData(page) {
   };
 }
 
-const extractCommodityData = async (page) => {
-  await page.goto('https://www.moneycontrol.com/commodity/');
+// Extract commodity data
+async function extractCommodityData(page): Promise<CommodityRowData[]> {
+  console.log('\n--- Starting Commodity Data Extraction ---');
+  
+  await page.goto('https://www.moneycontrol.com/commodity/', {
+    waitUntil: 'domcontentloaded',
+    timeout: 60000
+  });
+  
+  await page.waitForTimeout(2000);
+
   try {
-    await page.waitForSelector('button:has-text("No thanks")', { timeout: 5000 });
-    await page.getByRole('button', { name: 'No thanks' }).click();
+    const noThanksButton = page.getByRole('button', { name: 'No thanks' });
+    await noThanksButton.waitFor({ state: 'visible', timeout: 5000 });
+    await noThanksButton.click();
     console.log('Modal "No thanks" button clicked.');
   } catch (error) {
     console.log('Modal did not appear or button was not found. Continuing...');
@@ -64,43 +115,36 @@ const extractCommodityData = async (page) => {
 
   await page.getByRole('listitem').filter({ hasText: 'Spot Rates' }).click();
   await page.getByRole('heading', { name: 'MAJOR COMMODITIES' }).click();
+  
   const table = page.getByRole('table').first();
   await expect(table).toBeVisible({ timeout: 15000 });
-  console.log('Successfully located the tables.');
 
-  // --- Step 1: Extract Table Headers ---
-  // Get the text from all <th> elements within the <thead>
   const headers = await table.locator('thead th').allInnerTexts();
-  // Clean up header names to be used as object keys (e.g., remove extra spaces)
   const cleanHeaders = headers.map(h => h.trim());
 
-  // --- Step 2: Extract All Data Rows ---
-  // Get all <tr> elements from the <tbody>
   const dataRows = await table.locator('tbody tr').all();
   console.log(`Found ${dataRows.length} data rows in the table.`);
 
-  const tableData: Record<string, string>[] = [];
+  const tableData: CommodityRowData[] = [];
 
-  // --- Step 3: Process Each Row ---
   for (const row of dataRows) {
-    // Get all <td> cells for the current row
     const cellValues = await row.locator('td').allInnerTexts();
-
-    // Create an object for the row by mapping headers to cell values
+    
     const rowData = cleanHeaders.reduce((obj: Record<string, string>, header, index) => {
-      obj[header] = cellValues[index];
+      obj[header] = cellValues[index] || '';
       return obj;
     }, {} as Record<string, string>);
 
     tableData.push(rowData);
   }
+
   return tableData;
 }
 
-
-// Test that uses the function
-test('currency test', async ({ page }) => {
-
+// Extract currency data with a fresh page for each URL
+async function extractCurrencyData(browser): Promise<CurrencyData[]> {
+  console.log('\n--- Starting Currency/Index Data Extraction ---');
+  
   const currencyUrls = [
     'https://finance.yahoo.com/quote/INR=X/',
     'https://finance.yahoo.com/quote/EURINR=X/',
@@ -109,37 +153,127 @@ test('currency test', async ({ page }) => {
     'https://finance.yahoo.com/quote/%5ENDX/',
     'https://finance.yahoo.com/quote/%5EGDAXI/',
     'https://finance.yahoo.com/quote/%5EHSI/',
-    'https://finance.yahoo.com/quote/%5EN225/',
+    'https://finance.yahoo.com/quote/%5EN225/'
   ];
 
+  const currencyData: CurrencyData[] = [];
 
-  for(const row of currencyUrls){
-    await page.goto(row, { waitUntil: 'commit', timeout: 60000 });
-    const price = await page.getByTestId('price-statistic').innerText();
-    console.log(`Current ${row} exchange rate: ${price}`);
+  for (const url of currencyUrls) {
+    const page = await browser.newPage({
+      viewport: { width: 1920, height: 1080 },
+      extraHTTPHeaders: {
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Sec-Ch-Ua': '"Not A(Brand";v="99", "Google Chrome";v="121", "Chromium";v="121"',
+        'Sec-Ch-Ua-Mobile': '?0',
+        'Sec-Ch-Ua-Platform': '"Windows"',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'none',
+        'Sec-Fetch-User': '?1',
+        'Upgrade-Insecure-Requests': '1',
+      },
+    });
+
+    try {
+      console.log(`Extracting data from: ${url}`);
+      
+      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+      await page.waitForTimeout(2000);
+
+      // Handle Yahoo Finance consent modal
+      try {
+        const consentButton = page.getByTestId('qc-cmp-yes-button');
+        await consentButton.waitFor({ state: 'visible', timeout: 3000 });
+        await consentButton.click();
+        console.log('Consent modal accepted.');
+      } catch (error) {
+        // No consent modal, continue
+      }
+
+      const symbol = decodeURIComponent(url.split('/').slice(-2)[0]);
+      
+      const priceElement = page.locator('[data-testid="qsp-price"]');
+      await priceElement.waitFor({ state: 'visible', timeout: 10000 });
+      const price = await priceElement.innerText();
+
+      let instrumentName = symbol;
+      try {
+        const nameElement = page.locator('h1').first();
+        instrumentName = await nameElement.innerText();
+      } catch (error) {
+        // Fallback to symbol
+      }
+
+      currencyData.push({
+        symbol: symbol,
+        name: instrumentName.trim(),
+        price: price.trim(),
+        url: url
+      });
+
+      console.log(`✓ ${instrumentName.trim()}: ${price.trim()}`);
+
+    } catch (error) {
+      console.log(`✗ Failed to extract data from ${url}: ${error.message}`);
+    } finally {
+      await page.close();
+    }
   }
- 
+
+  console.log(`\nCurrency/Index Data Extraction Complete: ${currencyData.length} instruments processed.`);
+  return currencyData;
+}
+
+// Main test
+test('Extract Complete Market Data', async ({ browser }) => {
+  test.setTimeout(120000); // Increase timeout to 120 seconds
+  
+  try {
+    console.log('🚀 Starting comprehensive data extraction from all sources...');
+
+    // Create page for Moneycontrol data
+    const mcPage = await browser.newPage({
+      viewport: { width: 1920, height: 1080 },
+      extraHTTPHeaders: {
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Sec-Ch-Ua': '"Not A(Brand";v="99", "Google Chrome";v="121", "Chromium";v="121"',
+        'Sec-Ch-Ua-Mobile': '?0',
+        'Sec-Ch-Ua-Platform': '"Windows"',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'none',
+        'Sec-Fetch-User': '?1',
+        'Upgrade-Insecure-Requests': '1',
+      },
+    });
+
+    const fiiDiiData = await extractFIIDIIActivityData(mcPage);
+    const commodityData = await extractCommodityData(mcPage);
+    await mcPage.close();
+
+    // Extract Currency data using fresh pages for each URL
+    const currencyData = await extractCurrencyData(browser);
+
+    console.log('\n\n========== COMPLETE MARKET DATA ==========\n');
+    console.log('1. FII/DII ACTIVITY DATA:', JSON.stringify(fiiDiiData, null, 2));
+    console.log('\n2. MAJOR COMMODITIES DATA:', JSON.stringify(commodityData, null, 2));
+    console.log('\n3. CURRENCY & INDEX DATA:', JSON.stringify(currencyData, null, 2));
+    console.log('\n========== END OF DATA ==========');
+
+    expect(fiiDiiData.DateOfTable).toBeTruthy();
+    expect(fiiDiiData.GrossPurchaseFII).toBeTruthy();
+    expect(commodityData.length).toBeGreaterThan(0);
+    expect(currencyData.length).toBeGreaterThan(0);
+
+    console.log('\n📊 DATA EXTRACTION SUMMARY:');
+    console.log(`- FII/DII: ${Object.keys(fiiDiiData).length} fields extracted`);
+    console.log(`- Commodities: ${commodityData.length} rows extracted`);
+    console.log(`- Currencies/Indices: ${currencyData.length} instruments extracted`);
+    console.log('\n✅ All data extracted successfully!');
+
+  } catch (error) {
+    console.error('\n❌ Test failed with error:', error.message);
+    console.error('Stack trace:', error.stack);
+    throw error;
+  }
 });
-
-test('commodity test',async({page})=>{
-  const tableData = await extractCommodityData(page);
-
-  console.log('\n--- Extracted Major Commodities Data ---');
-  console.log(JSON.stringify(tableData, null, 2));
-  console.log('---------------------------------------');
-})
-
-test('FII DII test',async({page})=>{
-  const fiiDiiData = await extractFIIDIIActivityData(page);
-
-  console.log('\n--- Values from the first row of the second table ---');
-  console.log(fiiDiiData.DateOfTable);
-  console.log(fiiDiiData.GrossPurchaseFII);
-  console.log(fiiDiiData.GrossSalesFII);
-  console.log(fiiDiiData.NetSalesFII);
-  console.log(fiiDiiData.GrossPurchaseDII);
-  console.log(fiiDiiData.GrossSalesDII);
-  console.log(fiiDiiData.NetSalesDII);
-  console.log('-----------------------------------------------------');
-})
-
