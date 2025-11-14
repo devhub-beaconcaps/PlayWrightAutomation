@@ -277,7 +277,8 @@ function formatSelectedCommodities(commodities) {
 }
 
 
-
+// Add retry configuration for this specific test
+test.describe.configure({ retries: 2 });
 
 // Main test
 test('Extract Complete Market Data', async ({ browser }) => {

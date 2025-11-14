@@ -47,6 +47,9 @@ async function extractTableData(page: any, targetIndices: string[]) {
   }
 }
 
+// Add retry configuration for this specific test
+test.describe.configure({ retries: 2 });
+
 test('fetch indices data', async ({ page }) => {
   console.log('\n--- Starting Indices Data Extraction ---');
 

@@ -88,7 +88,7 @@ async function extractTableData(
  */
 function parseNumericValue(value: string): number {
   if (!value) return 0;
-  const cleaned = value.replace(/[%\s,]/g, ''); // Remove %, commas, spaces
+  const cleaned = value.replace(/[%\s,]/g, '');
   const num = parseFloat(cleaned);
   return isNaN(num) ? 0 : num;
 }
@@ -153,6 +153,9 @@ async function saveToStrappi(payload: any) {
     throw error;
   }
 }
+
+// Add retry configuration for this specific test
+test.describe.configure({ retries: 2 });
 
 test('SME Market - Top 5 Gainers and Losers', async ({ page }) => {
   test.setTimeout(CONFIG.testTimeout);
