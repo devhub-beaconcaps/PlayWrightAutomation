@@ -26,7 +26,7 @@ interface CurrencyData {
   url: string;
 }
 
-const EQUID_API_TOKEN = 'd6391becdaf54eb9a3352f3e4d0cc56772f1e178f3fd6702482edb419d172113acd018c5d1a5e5899fcd5bcd40e6ffbb8e79f3c7871a1e72b27dbaec953f063dadd3c95c6c0ca767079516ac7f122e2a5aadcf9c9caa067898349e0dfc9c7b49c95082ef5185ed7e5411cf81e38174534d941ce77d99910bd6aecc2d0687f9ab';
+const EQUID_API_TOKEN = process.env.STRAPI_API_TOKEN || '';
 
 // Configure test
 test.use({
