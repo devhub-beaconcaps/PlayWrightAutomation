@@ -47,7 +47,7 @@ test.use({
   launchOptions: {
     slowMo: 50,
   },
-  headless: false,
+  headless: true,
 });
 
 // Extract FII/DII data
