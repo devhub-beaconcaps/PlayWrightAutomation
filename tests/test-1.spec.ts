@@ -1,76 +1,118 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, Page } from '@playwright/test';
 
 
-async function extractTableData(page: any, targetIndices: string[]) {
+// -----------------------------
+// Utility: Safe wait
+// -----------------------------
+async function safeWait(page: Page, ms: number) {
   try {
-    // Extract table data
-    const tableLocator = page.locator('#indicesTable');
-    await tableLocator.waitFor({ state: 'visible', timeout: 10000 });
-    console.log('Table found and visible.');
-
-    const headers = await tableLocator.locator('thead th').allTextContents();
-    const cleanedHeaders = headers.map(h => h.trim()).filter(h => h.length > 0);
-    console.log('Headers extracted:', cleanedHeaders);
-
-    const rows = tableLocator.locator('tbody tr');
-    const rowCount = await rows.count();
-    console.log(`Found ${rowCount} rows of data.`);
-
-    // Define target indices - case insensitive and handles extra spaces
-    const normalizedTargets = targetIndices.map(name => name.toUpperCase().trim());
-
-    const tableData: Array<{ [key: string]: string }> = [];
-
-    for (let i = 0; i < rowCount; i++) {
-      const cells = rows.nth(i).locator('td');
-      const cellCount = await cells.count();
-
-      if (cellCount > 0) {
-        const rowData: { [key: string]: string } = {};
-        for (let j = 0; j < Math.min(cellCount, cleanedHeaders.length); j++) {
-          const cellText = await cells.nth(j).innerText();
-          rowData[cleanedHeaders[j]] = cellText.trim();
-        }
-
-        // Filter logic: only include rows with matching names (case-insensitive, trimmed)
-        const rowName = rowData['Name']?.toUpperCase().trim() || '';
-        if (normalizedTargets.includes(rowName)) {
-          tableData.push(rowData);
-        }
-      }
-    }
-
-    return tableData;
-  } catch (error) {
-    console.error('Error extracting table data:', error);
-    return [];
-  }
+    await page.waitForTimeout(ms);
+  } catch (_) {}
 }
 
-// Add retry configuration for this specific test
+
+// -----------------------------
+// Utility: Extract Table Data (with retry)
+// -----------------------------
+async function extractTableData(page: Page, targetIndices: string[]) {
+  const maxRetries = 3;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      console.log(`\n[extractTableData] Attempt ${attempt}/${maxRetries}`);
+
+      const tableLocator = page.locator('#indicesTable');
+
+      await tableLocator.waitFor({ state: 'visible', timeout: 15000 });
+      await safeWait(page, 1500);
+
+      const headers = await tableLocator.locator('thead th').allTextContents();
+      const cleanedHeaders = headers.map(h => h.trim()).filter(Boolean);
+
+      const rows = tableLocator.locator('tbody tr');
+      const rowCount = await rows.count();
+      console.log(`Found ${rowCount} rows.`);
+
+      if (rowCount === 0) throw new Error("Table rows not loaded yet");
+
+      const normalizedTargets = targetIndices.map(x => x.toUpperCase().trim());
+
+      const result: Array<{ [key: string]: string }> = [];
+
+      for (let i = 0; i < rowCount; i++) {
+        const rowCells = rows.nth(i).locator('td');
+        const cellCount = await rowCells.count();
+
+        if (cellCount === 0) continue;
+
+        const rowData: { [key: string]: string } = {};
+
+        for (let j = 0; j < Math.min(cellCount, cleanedHeaders.length); j++) {
+          const text = await rowCells.nth(j).innerText();
+          rowData[cleanedHeaders[j]] = text.trim();
+        }
+
+        const rowName = rowData['Name']?.toUpperCase().trim() || '';
+
+        if (normalizedTargets.includes(rowName)) {
+          result.push(rowData);
+        }
+      }
+
+      return result;
+    } catch (err) {
+      console.log(`extractTableData attempt ${attempt} failed. Retrying...`);
+      await safeWait(page, 2000);
+
+      if (attempt === maxRetries) {
+        console.error("❌ All retries failed for extractTableData", err);
+        return [];
+      }
+    }
+  }
+
+  return [];
+}
+
+
+// -----------------------------
+// Test Configuration
+// -----------------------------
 test.describe.configure({ retries: 2 });
 
-test('fetch indices data', async ({ page }) => {
-  console.log('\n--- Starting Indices Data Extraction ---');
+test('Fetch NSE + BSE indices data (stable version)', async ({ page }) => {
 
-  // Navigate to the page
-  await page.goto('https://www.moneycontrol.com/markets/indian-indices/ ', {
+  console.log("\n====== Starting Indices Extraction ======\n");
+
+  // -----------------------------
+  // Load Page
+  // -----------------------------
+  await page.goto('https://www.moneycontrol.com/markets/indian-indices/', {
     waitUntil: 'domcontentloaded',
     timeout: 60000
   });
 
-  // Wait for initial page load
-  await page.waitForTimeout(2000);
+  await safeWait(page, 2500);
 
-  // Handle potential modal
-  try {
-    const noThanksButton = page.getByRole('button', { name: 'No thanks' });
-    await noThanksButton.waitFor({ state: 'visible', timeout: 5000 });
-    await noThanksButton.click();
-    console.log('Modal "No thanks" button clicked.');
-  } catch (error) {
-    console.log('Modal did not appear or button was not found. Continuing...');
+
+  // -----------------------------
+  // Handle Modal (Safe)
+  // -----------------------------
+  const noThanksBtn = page.getByRole('button', { name: /no thanks/i });
+
+  if (await noThanksBtn.isVisible()) {
+    console.log("Modal appeared → Clicking No Thanks");
+    await noThanksBtn.click().catch(() => {});
+    await safeWait(page, 1500);
+  } else {
+    console.log("No modal detected.");
   }
+
+
+  // -----------------------------
+  // OPEN NSE TAB (Stable Selectors)
+  // -----------------------------
+  console.log("Switching to NSE tab...");
 
   // Navigate to NSE tab
   await page.getByRole('listitem').filter({ hasText: 'Live Markets NSE NSE BSE' }).getByRole('strong').click();
@@ -79,34 +121,53 @@ test('fetch indices data', async ({ page }) => {
   await page.waitForTimeout(2000);
 
 
-  const targetNSEIndices = ['NIFTY 50', 'NIFTY BANK', 'NIFTY Midcap 100', 'NIFTY Smallcap 100', 'Nifty Microcap 250'];
-  const NSEtableData = await extractTableData(page, targetNSEIndices);
-  // Log the extracted data
-  // console.log('\n--- Filtered Data (First 3 rows) ---');
-  // console.log(JSON.stringify(tableData.slice(0, 3), null, 2));
-  // console.log(`\nTotal filtered records extracted: ${tableData.length}`);
+  // -----------------------------
+  // Extract NSE Data
+  // -----------------------------
+  const targetNSE = [
+    'NIFTY 50',
+    'NIFTY BANK',
+    'NIFTY MIDCAP 100',
+    'NIFTY SMALLCAP 100',
+    'NIFTY MICROCAP 250'
+  ];
 
-  // Log all filtered data
-  // console.log('\n--- All Filtered NSE Data ---');
-  // console.log(JSON.stringify(NSEtableData, null, 2));
+  const NSEdata = await extractTableData(page, targetNSE);
+  console.log("\nNSE Data:", NSEdata);
 
+
+  // -----------------------------
+  // OPEN BSE TAB
+  // -----------------------------
+  console.log("Switching to BSE tab...");
 
   await page.getByRole('listitem').filter({ hasText: 'Live Markets NSE NSE BSE' }).getByRole('strong').click();
   await page.waitForTimeout(2000);
   await page.getByText('BSE').nth(3).click();
   await page.waitForTimeout(2000);
 
-  const targetBSEIndices = ['SENSEX', 'BSE MIDCAP', 'BSE SMALLCAP'];
-  const BSEtableData = await extractTableData(page, targetBSEIndices);
 
-  // console.log('\n--- All Filtered BSE Data ---');
-  // console.log(JSON.stringify(BSEtableData, null, 2));
+  // -----------------------------
+  // Extract BSE Data
+  // -----------------------------
+  const targetBSE = [
+    'SENSEX',
+    'BSE MIDCAP',
+    'BSE SMALLCAP'
+  ];
 
-  const combinedData = [...NSEtableData, ...BSEtableData];
-  console.log('\n--- Combined Filtered Data ---');
-  console.log(JSON.stringify(combinedData, null, 2));
-  console.log(`\nTotal combined records extracted: ${combinedData.length}`);
+  const BSEdata = await extractTableData(page, targetBSE);
+  console.log("\nBSE Data:", BSEdata);
 
 
-  console.log('\n--- Data Extraction Complete ---');
+  // -----------------------------
+  // Combined Output
+  // -----------------------------
+  const combined = [...NSEdata, ...BSEdata];
+
+  console.log("\n===== FINAL COMBINED RESULT =====");
+  console.log(JSON.stringify(combined, null, 2));
+  console.log(`\nTotal Records Extracted: ${combined.length}`);
+  console.log("\n====== Extraction Complete ======\n");
+
 });

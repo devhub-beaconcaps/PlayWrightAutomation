@@ -103,7 +103,7 @@ async function extractFIIDIIActivityData(page): Promise<FIIDIIActivityData> {
 async function extractCommodityData(page): Promise<CommodityRowData[]> {
   console.log('\n--- Starting Commodity Data Extraction ---');
 
-  await page.goto('https://www.moneycontrol.com/commodity/ ', {
+  await page.goto('https://www.moneycontrol.com/commodity/', {
     waitUntil: 'domcontentloaded',
     timeout: 60000
   });
@@ -152,14 +152,14 @@ async function extractCurrencyData(browser): Promise<CurrencyData[]> {
   console.log('\n--- Starting Currency/Index Data Extraction ---');
 
   const currencyUrls = [
-    'https://finance.yahoo.com/quote/INR=X/ ',
-    'https://finance.yahoo.com/quote/EURINR=X/ ',
-    'https://finance.yahoo.com/quote/GBPINR=X/ ',
-    'https://finance.yahoo.com/quote/%5EDJI/ ',
-    'https://finance.yahoo.com/quote/%5ENDX/ ',
-    'https://finance.yahoo.com/quote/%5EGDAXI/ ',
-    'https://finance.yahoo.com/quote/%5EHSI/ ',
-    'https://finance.yahoo.com/quote/%5EN225/ '
+    'https://finance.yahoo.com/quote/INR=X/',
+    'https://finance.yahoo.com/quote/EURINR=X/',
+    'https://finance.yahoo.com/quote/GBPINR=X/',
+    'https://finance.yahoo.com/quote/%5EDJI/',
+    'https://finance.yahoo.com/quote/%5ENDX/',
+    'https://finance.yahoo.com/quote/%5EGDAXI/',
+    'https://finance.yahoo.com/quote/%5EHSI/',
+    'https://finance.yahoo.com/quote/%5EN225/'
   ];
 
   const currencyData: CurrencyData[] = [];
