@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import axios from 'axios';
-
+// PREMARKET DATA(CURRENCY,COMMODITY,FII DII)
 // TypeScript interfaces
 interface FIIDIIActivityData {
   DateOfTable: string;
@@ -233,7 +233,7 @@ async function extractCurrencyData(browser): Promise<CurrencyData[]> {
       currencyData.push(data);
 
       console.log(`✓ ${instrumentName.trim()}`);
-      console.log(`  Price: ${price.trim()} | Change: ${priceChange.trim()} | % Change: ${percentChange.trim()}`);
+      console.log(`  Price: ${price.trim()} | Change: ${priceChange.trim()} | % Change: ${percentChange.replace(/^\(|\)$/g, '')}`);
 
     } catch (error) {
       console.log(`✗ Failed to extract data from ${url}: ${error.message}`);
@@ -246,13 +246,19 @@ async function extractCurrencyData(browser): Promise<CurrencyData[]> {
   return currencyData;
 }
 
+function cleanValue(str) {
+  return str
+    .replace(/[()]/g, '')   // remove all brackets
+    .replace(/^\+/, '');    // remove + only if at the start
+}
+
 function formatAllCurrencies(commodities) {
   return commodities.reduce((acc, item) => {
     // Create valid variable name by removing special characters
     const key = item.symbol.replace(/[\^=]/g, '');
 
     // Format: "price (priceChange, percentChange)"
-    acc[key] = `${item?.price || ''} (${item?.priceChange || ''}, ${item?.percentChange || ''})`;
+    acc[key] = `${item?.price || ''} (${item?.priceChange || ''}, ${cleanValue(item?.percentChange) || ''})`;
 
     return acc;
   }, {});
