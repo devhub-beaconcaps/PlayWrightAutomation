@@ -83,10 +83,13 @@ function mapToStrapiFormat(extractedData: Array<{ [key: string]: string }>): { [
     }
   }
 
-  // Set current date in YYYY-MM-DD format
-  // const today = new Date();
-  // Note: This uses local system timezone. For IST (UTC+5:30), consider using a library like date-fns-tz
-  // result.Postmarket_Date = today.toISOString().split('T')[0];
+  // Set current date in YYYY-MM-DD format for IST (UTC+5:30)
+  const now = new Date();
+  const istTime = new Date(now.toLocaleString("en-US", {timeZone: "Asia/Kolkata"}));
+  const year = istTime.getFullYear();
+  const month = String(istTime.getMonth() + 1).padStart(2, '0');
+  const day = String(istTime.getDate()).padStart(2, '0');
+  result.Postmarket_Date = `${year}-${month}-${day}`;
 
   return result;
 }
@@ -101,7 +104,7 @@ async function postToStrapi(data: { [key: string]: any }, apiToken: string): Pro
 
     const payload = { data };
 
-    console.log('  Payload preview:', JSON.stringify(payload, null, 2).substring(0, 500) + '...');
+    console.log('  Payload preview:', JSON.stringify(payload));
 
     const response = await fetch(STRAPI_API_URL, {
       method: 'PUT', // Using PUT to update existing record
@@ -300,7 +303,7 @@ test('Fetch NSE + BSE indices data and post to Strapi', async ({ page }) => {
     await postToStrapi(strapiData, EQUID_API_TOKEN);
     console.log("  ✅ Strapi post completed successfully");
   } catch (error) {
-    console.error("  ❌ Strapi post failed:", error.message);
+    console.error("  ❌ Strapi post failed:", error);
     // Uncomment to fail the test on Strapi errors
     // throw error;
   }

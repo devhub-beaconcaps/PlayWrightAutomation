@@ -16,13 +16,12 @@ interface CommodityRowData {
   [key: string]: string;
 }
 
-// UPDATED INTERFACE
 interface CurrencyData {
   symbol: string;
   name: string;
   price: string;
-  priceChange: string;      // NEW: Price change value
-  percentChange: string;    // NEW: Percent change value
+  priceChange: string;
+  percentChange: string;
   url: string;
 }
 
@@ -54,7 +53,7 @@ test.use({
 async function extractFIIDIIActivityData(page): Promise<FIIDIIActivityData> {
   console.log('\n--- Starting FII/DII Data Extraction ---');
 
-  await page.goto('https://www.moneycontrol.com/stocks/marketstats/fii_dii_activity/index.php ', {
+  await page.goto('https://www.moneycontrol.com/stocks/marketstats/fii_dii_activity/index.php', {
     waitUntil: 'domcontentloaded',
     timeout: 60000
   });
@@ -147,7 +146,7 @@ async function extractCommodityData(page): Promise<CommodityRowData[]> {
   return tableData;
 }
 
-// UPDATED: Extract currency data with price change and percent change
+// Extract currency data
 async function extractCurrencyData(browser): Promise<CurrencyData[]> {
   console.log('\n--- Starting Currency/Index Data Extraction ---');
 
@@ -203,7 +202,7 @@ async function extractCurrencyData(browser): Promise<CurrencyData[]> {
       await priceElement.waitFor({ state: 'visible', timeout: 10000 });
       const price = await priceElement.innerText();
 
-      // UPDATED: Extract price change and percent change
+      // Extract price change and percent change
       const priceChangeElement = page.locator('[data-testid="qsp-price-change"]');
       await priceChangeElement.waitFor({ state: 'visible', timeout: 10000 });
       const priceChange = await priceChangeElement.innerText();
@@ -225,8 +224,8 @@ async function extractCurrencyData(browser): Promise<CurrencyData[]> {
         symbol: symbol,
         name: instrumentName.trim(),
         price: price.trim(),
-        priceChange: priceChange.trim(),      // NEW
-        percentChange: percentChange.trim(),  // NEW
+        priceChange: priceChange.trim(),
+        percentChange: percentChange.trim(),
         url: url
       };
 
@@ -282,7 +281,6 @@ function formatSelectedCommodities(commodities) {
   };
 }
 
-
 // Add retry configuration for this specific test
 test.describe.configure({ retries: 2 });
 
@@ -330,14 +328,25 @@ test('Extract Complete Market Data', async ({ browser }) => {
     console.log(`- Commodities: ${commodityData.length} rows extracted`);
     console.log(`- Currencies/Indices: ${currencyData.length} instruments extracted`);
     console.log('\n✅ All data extracted successfully!');
+
     const { INRX, EURINRX, GBPINRX, DJI, NDX, GDAXI, HSI, N225 } = formatAllCurrencies(currencyData);
     console.log('\nFormatted Currencies/Indices:', { INRX, EURINRX, GBPINRX, DJI, NDX, GDAXI, HSI, N225 });
+
     const { gold, crudeoil, silver } = formatSelectedCommodities(commodityData);
     console.log('\nFormatted Commodities:', { gold, crudeoil, silver });
+
+    // Calculate current date in IST timezone
+    const now = new Date();
+    const istTime = new Date(now.toLocaleString("en-US", {timeZone: "Asia/Kolkata"}));
+    const year = istTime.getFullYear();
+    const month = String(istTime.getMonth() + 1).padStart(2, '0');
+    const day = String(istTime.getDate()).padStart(2, '0');
+    const currentISODate = `${year}-${month}-${day}`;
 
     const payload = {
       data: {
         // Map your scraped data to Strapi fields
+        Date: currentISODate, // Add current date in YYYY-MM-DD format
         USDINR: INRX || '',
         EURINR: EURINRX || '',
         GBPINR: GBPINRX || '',
@@ -356,9 +365,17 @@ test('Extract Complete Market Data', async ({ browser }) => {
       }
     };
 
+    // Validate API token
+    if (!EQUID_API_TOKEN) {
+      console.error("  ❌ CRITICAL: Strapi API token not configured!");
+      console.error("     Set STRAPI_API_TOKEN environment variable");
+      console.log("\n====== Test Completed (Strapi post skipped) ======\n");
+      return;
+    }
+
     try {
-      const response = await fetch(`https://admin.equivision.in/api/pre-market-updates/nqg7p30n5zan7oyw56g6b25n`, {
-        method: 'PUT', // or 'PATCH' for partial update
+      const response = await fetch('https://admin.equivision.in/api/pre-market-updates/nqg7p30n5zan7oyw56g6b25n', {
+        method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${EQUID_API_TOKEN}`
@@ -367,22 +384,18 @@ test('Extract Complete Market Data', async ({ browser }) => {
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        const errorText = await response.text();
+        throw new Error(`HTTP ${response.status} ${response.statusText}: ${errorText}`);
       }
 
       const result = await response.json();
-      console.log('Update successful:', result);
-      return result;
+      console.log('✅ Strapi update successful!');
+      console.log('Update result:', result);
 
     } catch (error) {
-      console.error('Error updating row:', error);
+      console.error('❌ Error updating Strapi row:', error);
       throw error;
     }
-    // console.log('Data pushed to API:', data);
-
-
-
-
 
   } catch (error) {
     console.error('\n❌ Test failed with error:', error.message);
@@ -390,4 +403,3 @@ test('Extract Complete Market Data', async ({ browser }) => {
     throw error;
   }
 });
-
