@@ -9,13 +9,13 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Execute git pull on server
+      - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
-          password: ${{ secrets.SSH_PASSWORD }}
+          key: ${{ secrets.SSH_KEY }}
           port: 22
           script: |
-            cd /home/rootadmin/PlayWrightAutomation   # CHANGE THIS
+            cd /home/rootadmin/PlayWrightAutomation
             git pull origin main
