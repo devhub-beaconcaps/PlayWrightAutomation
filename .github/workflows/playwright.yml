@@ -9,13 +9,53 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Deploy via SSH
+      # Optional: log some basic GitHub context (not secret)
+      - name: Show GitHub context (debug)
+        run: |
+          echo "Actor: $GITHUB_ACTOR"
+          echo "Ref:   $GITHUB_REF"
+          echo "SHA:   $GITHUB_SHA"
+
+      - name: Debug SSH connection and deploy
         uses: appleboy/ssh-action@v1.2.0
         with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_KEY }}
+          host: ${{ secrets.SSH_HOST }}       # should be 20.244.82.242
+          username: ${{ secrets.SSH_USER }}   # should be rootadmin
+          key: ${{ secrets.SSH_KEY }}         # your private key block
           port: 22
+          debug: true                         # <– turns on verbose SSH logs in the action
           script: |
-            cd /home/rootadmin/PlayWrightAutomation
+            set -x
+
+            echo "== WHOAMI / HOST =="
+            whoami
+            hostname
+
+            echo "== PWD & HOME LISTING =="
+            pwd
+            echo "Home (~) content:"
+            ls -la ~
+
+            echo "== .ssh FOLDER =="
+            ls -la ~/.ssh || echo "~/.ssh does not exist"
+
+            echo "== authorized_keys CONTENT =="
+            if [ -f ~/.ssh/authorized_keys ]; then
+              cat -n ~/.ssh/authorized_keys
+            else
+              echo "No ~/.ssh/authorized_keys file found"
+            fi
+
+            echo "== GO TO PROJECT DIR =="
+            cd /home/rootadmin/PlayWrightAutomation || {
+              echo "Project folder not found"; exit 1;
+            }
+            pwd
+            echo "== GIT REMOTES =="
+            git remote -v || echo "git remote failed"
+
+            echo "== GIT STATUS =="
+            git status || echo "git status failed"
+
+            echo "== GIT PULL =="
             git pull origin main
