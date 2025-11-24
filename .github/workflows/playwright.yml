@@ -15,7 +15,7 @@ jobs:
           host: "20.244.82.242"
           username: "rootadmin"
           port: 22
-          debug: true   # keep this ON until auth succeeds
+          debug: true  
 
           key: |
             -----BEGIN OPENSSH PRIVATE KEY-----
