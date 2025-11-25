@@ -9,22 +9,17 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.2.0
         with:
           host: "20.244.82.242"
           username: "rootadmin"
+          key: ${{ secrets.SSH_KEY }}
           port: 22
-          debug: true  
-
-          key: |
-            -----BEGIN OPENSSH PRIVATE KEY-----
-            b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW
-            QyNTUxOQAAACAt55JYZZkuw3LM6a1+g+XQCKRtZ3gGiju2r28dqsQCTgAAAJh7IePSeyHj
-            0gAAAAtzc2gtZWQyNTUxOQAAACAt55JYZZkuw3LM6a1+g+XQCKRtZ3gGiju2r28dqsQCTg
-            AAAECapWxYovPAr+qJKWo4kUe48VKOzfcUuafih9kHb+o5uC3nklhlmS7DcszprX6D5dAI
-            pG1neAaKO7avbx2qxAJOAAAAFWdpdGh1Yi1hY3Rpb25zLWRlcGxveQ==
-            -----END OPENSSH PRIVATE KEY-----
+          debug: true
 
           script: |
             cd /home/rootadmin/PlayWrightAutomation
