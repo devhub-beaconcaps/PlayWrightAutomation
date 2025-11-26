@@ -21,6 +21,7 @@ const EQUID_API_TOKEN = process.env.STRAPI_API_TOKEN || '';
 
 /**
  * Robust table extraction with multiple fallback strategies
+ * Filters out rows with empty Open, High, or Low values
  */
 async function extractTableData(
   page: Page,
@@ -53,12 +54,12 @@ async function extractTableData(
       const headers = Array.from(table.querySelectorAll('thead th'))
         .map(th => th.textContent?.trim() || '')
         .filter(text => text.length > 0)
-        .slice(0, 30);
+        .slice(0, 50);
 
       const rows = table.querySelectorAll('tbody tr');
       const data: TableRow[] = [];
 
-      for (let i = 0; i < Math.min(rows.length, 20); i++) {
+      for (let i = 0; i < Math.max(rows.length, 20); i++) {
         const cells = rows[i].querySelectorAll('td');
         if (cells.length < 3) continue;
 
@@ -67,7 +68,12 @@ async function extractTableData(
           rowData[header] = cells[idx]?.textContent?.trim() || '';
         });
 
-        if (rowData['Symbol']?.trim()) {
+        // Only include rows with valid Symbol AND valid Open/High/Low values
+        // Filter out rows where Open, High, or Low is empty or '-'
+        if (rowData['Symbol']?.trim() && 
+            rowData['Open']?.trim() && rowData['Open'] !== '-' &&
+            rowData['High']?.trim() && rowData['High'] !== '-' &&
+            rowData['Low']?.trim() && rowData['Low'] !== '-') {
           data.push(rowData);
         }
       }
@@ -80,10 +86,10 @@ async function extractTableData(
       };
     });
 
-    console.log(`   ✓ ${result.extracted}/${result.totalRows} rows extracted`);
+    console.log(`   ✓ ${result.extracted}/${result.totalRows} rows extracted after filtering`);
     return result.data;
 
-  } catch (error) {
+  } catch (error: any) {
     console.error(`   ✗ Extraction failed: ${error.message}`);
     return [];
   }
@@ -151,7 +157,7 @@ async function saveToStrappi(payload: any, attempt = 1) {
     console.log('   ✓ Strapi update successful!');
     return result;
 
-  } catch (error) {
+  } catch (error: any) {
     console.error('   ✗ Strapi update failed:', error.message);
     if (attempt < 3) {
       console.log(`   Retrying in ${attempt * 2} seconds...`);
@@ -201,7 +207,7 @@ async function runTestWithRetry(context: BrowserContext, attempt: number): Promi
     console.log('   NSE SME Market Data Extraction & Strapi Sync');
     console.log('='.repeat(80));
 
-    // Step 1: Navigate (✅ FIXED URL - NO TRAILING SPACE)
+    // Step 1: Navigate
     console.log('\n📍 Step 1: Navigate to page');
     await page.goto('https://www.nseindia.com/market-data/sme-market', {
       waitUntil: 'networkidle',
@@ -293,7 +299,6 @@ test('SME Market - Top 5 Gainers and Losers', async ({ browser }) => {
   
   for (let attempt = 1; attempt <= CONFIG.maxRetries + 1; attempt++) {
     const context = await browser.newContext({
-      // Each retry gets fresh context
       userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
       viewport: { width: 1920, height: 1080 },
       ignoreHTTPSErrors: true,
