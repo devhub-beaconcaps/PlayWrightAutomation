@@ -284,6 +284,39 @@ function formatSelectedCommodities(commodities) {
 // Add retry configuration for this specific test
 test.describe.configure({ retries: 2 });
 
+const updatePostMarket = async () => {
+
+  const payload = {
+    data: {
+      Has_to_Reflect_on_PreMarket: true
+    }
+  }
+  const postMarketUrl = 'https://admin.equivision.in/api/postmarkets/d99w2c4wm9yj00rwdi58ebye';
+  try {
+    const response = await fetch(postMarketUrl, {
+      method: 'PUT', // Using PUT to update existing record
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${EQUID_API_TOKEN}`,
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`HTTP ${response.status} ${response.statusText}: ${errorText}`);
+    }
+
+    const result = await response.json();
+    console.log('✅ postmarket update successful!');
+    console.log('Update result:', result);
+
+  } catch (error) {
+    console.error('❌ Error updating Strapi row:', error);
+    throw error;
+  }
+}
+
 // Main test
 test('Extract Complete Market Data', async ({ browser }) => {
   test.setTimeout(120000);
@@ -337,7 +370,7 @@ test('Extract Complete Market Data', async ({ browser }) => {
 
     // Calculate current date in IST timezone
     const now = new Date();
-    const istTime = new Date(now.toLocaleString("en-US", {timeZone: "Asia/Kolkata"}));
+    const istTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
     const year = istTime.getFullYear();
     const month = String(istTime.getMonth() + 1).padStart(2, '0');
     const day = String(istTime.getDate()).padStart(2, '0');
@@ -391,6 +424,8 @@ test('Extract Complete Market Data', async ({ browser }) => {
       const result = await response.json();
       console.log('✅ Strapi update successful!');
       console.log('Update result:', result);
+
+      await updatePostMarket();
 
     } catch (error) {
       console.error('❌ Error updating Strapi row:', error);

@@ -90,7 +90,7 @@ function mapToStrapiFormat(extractedData: Array<{ [key: string]: string }>): { [
   const month = String(istTime.getMonth() + 1).padStart(2, '0');
   const day = String(istTime.getDate()).padStart(2, '0');
   result.Postmarket_Date = `${year}-${month}-${day}`;
-  result.Has_to_Reflect_on_PreMarket = true;
+  result.Has_to_Reflect_on_PreMarket = false;
 
   return result;
 }
