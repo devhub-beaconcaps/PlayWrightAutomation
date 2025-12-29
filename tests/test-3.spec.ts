@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, Page, Browser } from '@playwright/test';
 import axios from 'axios';
 // PREMARKET DATA(CURRENCY,COMMODITY,FII DII)
 // TypeScript interfaces
@@ -50,7 +50,7 @@ test.use({
 });
 
 // Extract FII/DII data
-async function extractFIIDIIActivityData(page): Promise<FIIDIIActivityData> {
+async function extractFIIDIIActivityData(page: Page): Promise<FIIDIIActivityData> {
   console.log('\n--- Starting FII/DII Data Extraction ---');
 
   await page.goto('https://www.moneycontrol.com/stocks/marketstats/fii_dii_activity/index.php', {
@@ -99,7 +99,7 @@ async function extractFIIDIIActivityData(page): Promise<FIIDIIActivityData> {
 }
 
 // Extract commodity data
-async function extractCommodityData(page): Promise<CommodityRowData[]> {
+async function extractCommodityData(page: Page): Promise<CommodityRowData[]> {
   console.log('\n--- Starting Commodity Data Extraction ---');
 
   await page.goto('https://www.moneycontrol.com/commodity/', {
@@ -118,14 +118,14 @@ async function extractCommodityData(page): Promise<CommodityRowData[]> {
     console.log('Modal did not appear or button was not found. Continuing...');
   }
 
-  await page.getByRole('listitem').filter({ hasText: 'Spot Rates' }).click();
+  await page.getByRole('listitem').filter({ hasText: /^MCX$/ }).click();
   await page.getByRole('heading', { name: 'MAJOR COMMODITIES' }).click();
 
   const table = page.getByRole('table').first();
   await expect(table).toBeVisible({ timeout: 15000 });
 
   const headers = await table.locator('thead th').allInnerTexts();
-  const cleanHeaders = headers.map(h => h.trim());
+  const cleanHeaders = headers.map((h: string) => h.trim());
 
   const dataRows = await table.locator('tbody tr').all();
   console.log(`Found ${dataRows.length} data rows in the table.`);
@@ -147,7 +147,7 @@ async function extractCommodityData(page): Promise<CommodityRowData[]> {
 }
 
 // Extract currency data
-async function extractCurrencyData(browser): Promise<CurrencyData[]> {
+async function extractCurrencyData(browser: Browser): Promise<CurrencyData[]> {
   console.log('\n--- Starting Currency/Index Data Extraction ---');
 
   const currencyUrls = [
@@ -234,9 +234,10 @@ async function extractCurrencyData(browser): Promise<CurrencyData[]> {
       console.log(`✓ ${instrumentName.trim()}`);
       console.log(`  Price: ${price.trim()} | Change: ${priceChange.trim()} | % Change: ${percentChange.replace(/^\(|\)$/g, '')}`);
 
-    } catch (error) {
-      console.log(`✗ Failed to extract data from ${url}: ${error.message}`);
-    } finally {
+    } catch (error: unknown) {
+      console.error(error instanceof Error ? error.message : error);
+    }
+    finally {
       await page.close();
     }
   }
@@ -245,34 +246,46 @@ async function extractCurrencyData(browser): Promise<CurrencyData[]> {
   return currencyData;
 }
 
-function cleanValue(str) {
+function cleanValue(str: string): string {
   return str
-    .replace(/[()]/g, '')   // remove all brackets
-    .replace(/^\+/, '');    // remove + only if at the start
+    .replace(/[()]/g, '')
+    .replace(/^\+/, '');
 }
 
-function formatAllCurrencies(commodities) {
-  return commodities.reduce((acc, item) => {
-    // Create valid variable name by removing special characters
-    const key = item.symbol.replace(/[\^=]/g, '');
 
-    // Format: "price (priceChange, percentChange)"
-    acc[key] = `${item?.price || ''} (${item?.priceChange || ''}, ${cleanValue(item?.percentChange) || ''})`;
-
-    return acc;
-  }, {});
+function formatAllCurrencies(
+  commodities: CurrencyData[]
+): Record<string, string> {
+  return commodities.reduce(
+    (acc: Record<string, string>, item: CurrencyData) => {
+      const key = item.symbol.replace(/[\^=]/g, '');
+      acc[key] = `${item.price} (${item.priceChange}, ${cleanValue(item.percentChange)})`;
+      return acc;
+    },
+    {}
+  );
 }
 
-function formatSelectedCommodities(commodities) {
-  const formatItem = (item) => {
+
+function formatSelectedCommodities(
+  commodities: CommodityRowData[]
+): {
+  gold: string | null;
+  crudeoil: string | null;
+  silver: string | null;
+} {
+
+  const formatItem = (item?: CommodityRowData | undefined): string | null => {
     if (!item) return null;
-    // Format: LTP (Change, Chg%)
     return `${item.LTP} (${item.Change}, ${item['Chg%']}%)`;
   };
 
-  const goldItem = commodities.find(c => c.Name === "GOLD");
-  const crudeoilItem = commodities.find(c => c.Name === "CRUDEOIL");
-  const silverItem = commodities.find(c => c.Name === "SILVER");
+  const cleanName = (name: string) => name.split('\n')[0].trim();
+
+
+  const goldItem = commodities.find((c: CommodityRowData) => cleanName(c.Name) === "GOLD");
+  const crudeoilItem = commodities.find((c: CommodityRowData) => cleanName(c.Name) === "CRUDEOIL");
+  const silverItem = commodities.find((c: CommodityRowData) => cleanName(c.Name) === "SILVER");
 
   return {
     gold: formatItem(goldItem),
@@ -280,6 +293,70 @@ function formatSelectedCommodities(commodities) {
     silver: formatItem(silverItem)
   };
 }
+
+const fetchListingTodayData = async (page: Page, url: string) => {
+  try {
+    await page.goto(url, {
+      waitUntil: 'domcontentloaded',
+      timeout: 60000,
+    });
+
+    await page.waitForSelector('#report_table');
+
+    const tableData = await page.$$eval('#report_table tbody tr', (rows) => {
+      // Read and clean headers
+      const rawHeaders = Array.from(
+        document.querySelectorAll('#report_table thead th')
+      ).map(th => (th.textContent || '').trim());
+
+      // Map raw headers → friendly keys
+      const headerMap: Record<string, string> = {
+        'Company Name▲▼': 'companyName',
+        'Listing Date▲▼': 'listingDate',
+        'Issue Price (Rs)▲▼': 'issuePrice',
+        'Listing Day - Close Price (Rs)▲▼': 'closePrice',
+        'Listing Day Gain / Loss (%)▲▼': 'listingGainPct',
+        'Current Price at BSE (Rs)▲▼': 'currentPriceBSE',
+        'Current Price at NSE (Rs)▲▼': 'currentPriceNSE',
+        'Gain / Loss (%)▲▼': 'overallGainPct'
+      };
+
+      return Array.from(rows).map(row => {
+        const cells = Array.from(row.querySelectorAll('td'));
+        const obj: Record<string, string> = {};
+
+        rawHeaders.forEach((raw, i) => {
+          const key = headerMap[raw] || raw;   // fallback if header missing
+          obj[key] = cells[i]?.textContent?.trim() || '';
+        });
+
+        return obj;
+      });
+    });
+
+    const today = new Date();
+    const twentyDaysAgo = new Date(today);
+    twentyDaysAgo.setDate(today.getDate() - 20);
+
+    // --- filter by today's date ---
+    const todayFormatted = twentyDaysAgo.toLocaleDateString('en-US', {
+      month: 'short',
+      day: '2-digit',
+      year: 'numeric',
+      timeZone: 'Asia/Kolkata'
+    });
+
+    const listingToday = tableData.filter(
+      row => row.listingDate?.trim() === todayFormatted
+    );
+
+    console.log('📊 Clean listing rows:', listingToday);
+    return listingToday;
+  } catch (error) {
+    console.error('❌ Error during data extraction:', error);
+    return null;
+  }
+};
 
 // Add retry configuration for this specific test
 test.describe.configure({ retries: 2 });
@@ -312,9 +389,13 @@ const updatePostMarket = async () => {
     console.log('Update result:', result);
 
   } catch (error) {
-    console.error('❌ Error updating Strapi row:', error);
-    throw error;
+    if (error instanceof Error) {
+      console.error(error.message);
+    } else {
+      console.error(error);
+    }
   }
+
 }
 
 // Main test
@@ -341,6 +422,8 @@ test('Extract Complete Market Data', async ({ browser }) => {
 
     const fiiDiiData = await extractFIIDIIActivityData(mcPage);
     const commodityData = await extractCommodityData(mcPage);
+    const listingTodayData = await fetchListingTodayData(mcPage, 'https://www.chittorgarh.com/report/ipo-listing-date-check-status-price-bse-nse/25/sme/');
+    console.log('📊 Final listing today data:', listingTodayData);
     await mcPage.close();
 
     const currencyData = await extractCurrencyData(browser);
@@ -368,6 +451,20 @@ test('Extract Complete Market Data', async ({ browser }) => {
     const { gold, crudeoil, silver } = formatSelectedCommodities(commodityData);
     console.log('\nFormatted Commodities:', { gold, crudeoil, silver });
 
+    
+    let BSEFormattedData = '';
+    let NSEFormattedData = '';
+
+    if (listingTodayData && listingTodayData.length > 0) {
+      const BSEData = listingTodayData.filter(item => item.currentPriceBSE && item.currentPriceBSE !== '-');
+      const NSEData = listingTodayData.filter(item => item.currentPriceNSE && item.currentPriceNSE !== '-');
+      BSEFormattedData = `${BSEData[0].companyName}  BSE with Issue Price Rs.${BSEData[0].issuePrice}`;
+      NSEFormattedData = `${NSEData[0].companyName}  NSE with Issue Price Rs.${NSEData[0].issuePrice}`;
+    }
+    console.log("📊 BSE Formatted Data:", BSEFormattedData, "");
+    console.log("📊 NSE Formatted Data:", NSEFormattedData, "");
+    const formattedListingTodsayData = `${BSEFormattedData}\n${NSEFormattedData}`;
+
     // Calculate current date in IST timezone
     const now = new Date();
     const istTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
@@ -394,7 +491,8 @@ test('Extract Complete Market Data', async ({ browser }) => {
         BuyValueDii: parseFloat(fiiDiiData?.GrossPurchaseDII.replace(/,/g, '')) || 0,
         SellValueDii: parseFloat(fiiDiiData?.GrossSalesDII.replace(/,/g, '')) || 0,
         BuyValueFii: parseFloat(fiiDiiData?.GrossPurchaseFII.replace(/,/g, '')) || 0,
-        SellValueFii: parseFloat(fiiDiiData?.GrossSalesFII.replace(/,/g, '')) || 0
+        SellValueFii: parseFloat(fiiDiiData?.GrossSalesFII.replace(/,/g, '')) || 0,
+        IpoUpdates: formattedListingTodsayData || ''
       }
     };
 
@@ -427,14 +525,13 @@ test('Extract Complete Market Data', async ({ browser }) => {
 
       await updatePostMarket();
 
-    } catch (error) {
-      console.error('❌ Error updating Strapi row:', error);
-      throw error;
+    } catch (error: unknown) {
+      console.error(error instanceof Error ? error.message : error);
     }
 
-  } catch (error) {
-    console.error('\n❌ Test failed with error:', error.message);
-    console.error('Stack trace:', error.stack);
-    throw error;
+
+  } catch (error: unknown) {
+    console.error(error instanceof Error ? error.message : error);
   }
+
 });
