@@ -277,7 +277,7 @@ function formatSelectedCommodities(
 
   const formatItem = (item?: CommodityRowData | undefined): string | null => {
     if (!item) return null;
-    return `${item.LTP} (${item.Change}, ${item['Chg%']}%)`;
+    return `${item.LTP} (${parseInt(item.Change) > 0 ? '+' : ''}${item.Change}, ${item['Chg%']}%)`;
   };
 
   const cleanName = (name: string) => name.split('\n')[0].trim();
