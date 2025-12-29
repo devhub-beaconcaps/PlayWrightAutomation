@@ -338,11 +338,11 @@ const fetchListingTodayData = async (page: Page, url: string) => {
     });
 
     const today = new Date();
-    const twentyDaysAgo = new Date(today);
-    twentyDaysAgo.setDate(today.getDate() - 20);
+    // const twentyDaysAgo = new Date(today);
+    // twentyDaysAgo.setDate(today.getDate() - 20);
 
     // --- filter by today's date ---
-    const todayFormatted = twentyDaysAgo.toLocaleDateString('en-US', {
+    const todayFormatted = today.toLocaleDateString('en-US', {
       month: 'short',
       day: '2-digit',
       year: 'numeric',
