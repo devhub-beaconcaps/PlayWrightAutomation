@@ -247,9 +247,12 @@ async function extractCurrencyData(browser: Browser): Promise<CurrencyData[]> {
 }
 
 function cleanValue(str: string): string {
-  return str
-    .replace(/[()]/g, '')
-    .replace(/^\+/, '');
+  const numeric = str.replace(/[()%]/g, '').trim();
+
+  const value = parseFloat(numeric);
+  if (isNaN(value)) return '';
+
+  return value > 0 ? `+${value}` : `${value}`;
 }
 
 
@@ -277,7 +280,7 @@ function formatSelectedCommodities(
 
   const formatItem = (item?: CommodityRowData | undefined): string | null => {
     if (!item) return null;
-    return `${item.LTP} (${parseFloat(item.Change) > 0 ? '+' : ''}${item.Change}, ${item['Chg%']}%)`;
+    return `${item.LTP} (${parseFloat(item.Change) > 0 ? '+' : ''}${item.Change}, ${parseFloat(item['Chg%']) > 0 ? '+' : ''}${item['Chg%']}%)`;
   };
 
   const cleanName = (name: string) => name.split('\n')[0].trim();
