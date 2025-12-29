@@ -259,7 +259,7 @@ function formatAllCurrencies(
   return commodities.reduce(
     (acc: Record<string, string>, item: CurrencyData) => {
       const key = item.symbol.replace(/[\^=]/g, '');
-      acc[key] = `${item.price} (${item.priceChange}, ${cleanValue(item.percentChange)})`;
+      acc[key] = `${item.price} (${parseFloat(item.priceChange) > 0 ? '+' : ''}${item.priceChange}, ${cleanValue(item.percentChange)})`;
       return acc;
     },
     {}
@@ -277,7 +277,7 @@ function formatSelectedCommodities(
 
   const formatItem = (item?: CommodityRowData | undefined): string | null => {
     if (!item) return null;
-    return `${item.LTP} (${parseInt(item.Change) > 0 ? '+' : ''}${item.Change}, ${item['Chg%']}%)`;
+    return `${item.LTP} (${parseFloat(item.Change) > 0 ? '+' : ''}${item.Change}, ${item['Chg%']}%)`;
   };
 
   const cleanName = (name: string) => name.split('\n')[0].trim();
@@ -358,6 +358,31 @@ const fetchListingTodayData = async (page: Page, url: string) => {
   }
 };
 
+const fetchGSecData = async (page: Page, url: string) => {
+    try {
+        await page.goto(url, {
+            waitUntil: 'domcontentloaded',
+            timeout: 60000,
+        });
+
+        console.log('✅ Page ready, test continues...');
+
+        // Wait for the element to be available
+        const priceLocator = page.locator('[data-test="instrument-price-last"]');
+        await priceLocator.waitFor();
+
+        // Get its text
+        const priceText = await priceLocator.innerText();
+        console.log('📊 Current price:', priceText);
+
+        return parseFloat(priceText);
+
+    } catch (error) {
+        console.error('❌ Error during data extraction:', error);
+        return 0;
+    }
+};
+
 // Add retry configuration for this specific test
 test.describe.configure({ retries: 2 });
 
@@ -424,6 +449,10 @@ test('Extract Complete Market Data', async ({ browser }) => {
     const commodityData = await extractCommodityData(mcPage);
     const listingTodayData = await fetchListingTodayData(mcPage, 'https://www.chittorgarh.com/report/ipo-listing-date-check-status-price-bse-nse/25/sme/');
     console.log('📊 Final listing today data:', listingTodayData);
+
+    const priceText = await fetchGSecData(mcPage, 'https://in.investing.com/rates-bonds/india-10-year-bond-yield-historical-data');
+    console.log('📊 Final price text:', priceText);
+    
     await mcPage.close();
 
     const currencyData = await extractCurrencyData(browser);
@@ -458,8 +487,8 @@ test('Extract Complete Market Data', async ({ browser }) => {
     if (listingTodayData && listingTodayData.length > 0) {
       const BSEData = listingTodayData.filter(item => item.currentPriceBSE && item.currentPriceBSE !== '-');
       const NSEData = listingTodayData.filter(item => item.currentPriceNSE && item.currentPriceNSE !== '-');
-      BSEFormattedData = `${BSEData[0].companyName}  BSE with Issue Price Rs.${BSEData[0].issuePrice}`;
-      NSEFormattedData = `${NSEData[0].companyName}  NSE with Issue Price Rs.${NSEData[0].issuePrice}`;
+      BSEFormattedData = `${BSEData[0].companyName} : BSE SME`;
+      NSEFormattedData = `${NSEData[0].companyName} : NSE SME`;
     }
     console.log("📊 BSE Formatted Data:", BSEFormattedData, "");
     console.log("📊 NSE Formatted Data:", NSEFormattedData, "");
@@ -492,7 +521,8 @@ test('Extract Complete Market Data', async ({ browser }) => {
         SellValueDii: parseFloat(fiiDiiData?.GrossSalesDII.replace(/,/g, '')) || 0,
         BuyValueFii: parseFloat(fiiDiiData?.GrossPurchaseFII.replace(/,/g, '')) || 0,
         SellValueFii: parseFloat(fiiDiiData?.GrossSalesFII.replace(/,/g, '')) || 0,
-        IpoUpdates: formattedListingTodsayData || ''
+        IpoUpdates: formattedListingTodsayData || '',
+        DebtMarketHighlight: priceText.toFixed(3) || 0
       }
     };
 
