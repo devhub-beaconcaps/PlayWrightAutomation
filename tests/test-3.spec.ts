@@ -248,12 +248,11 @@ async function extractCurrencyData(browser: Browser): Promise<CurrencyData[]> {
 
 function cleanValue(str: string): string {
   const numeric = str.replace(/[()%]/g, '').trim();
-
   const value = parseFloat(numeric);
   if (isNaN(value)) return '';
-
   return value > 0 ? `+${value}` : `${value}`;
 }
+
 
 
 function formatAllCurrencies(
@@ -349,9 +348,19 @@ const fetchListingTodayData = async (page: Page, url: string) => {
       timeZone: 'Asia/Kolkata'
     });
 
-    const listingToday = tableData.filter(
-      row => row.listingDate?.trim() === todayFormatted
-    );
+    const listingToday = tableData.filter(row => {
+      if (!row.listingDate) return false;
+
+      const d = new Date(row.listingDate);
+      const today = new Date();
+
+      return (
+        d.getFullYear() === today.getFullYear() &&
+        d.getMonth() === today.getMonth() &&
+        d.getDate() === today.getDate()
+      );
+    });
+
 
     console.log('📊 Clean listing rows:', listingToday);
     return listingToday;
@@ -362,28 +371,28 @@ const fetchListingTodayData = async (page: Page, url: string) => {
 };
 
 const fetchGSecData = async (page: Page, url: string) => {
-    try {
-        await page.goto(url, {
-            waitUntil: 'domcontentloaded',
-            timeout: 60000,
-        });
+  try {
+    await page.goto(url, {
+      waitUntil: 'domcontentloaded',
+      timeout: 60000,
+    });
 
-        console.log('✅ Page ready, test continues...');
+    console.log('✅ Page ready, test continues...');
 
-        // Wait for the element to be available
-        const priceLocator = page.locator('[data-test="instrument-price-last"]');
-        await priceLocator.waitFor();
+    // Wait for the element to be available
+    const priceLocator = page.locator('[data-test="instrument-price-last"]');
+    await priceLocator.waitFor();
 
-        // Get its text
-        const priceText = await priceLocator.innerText();
-        console.log('📊 Current price:', priceText);
+    // Get its text
+    const priceText = await priceLocator.innerText();
+    console.log('📊 Current price:', priceText);
 
-        return parseFloat(priceText);
+    return parseFloat(priceText);
 
-    } catch (error) {
-        console.error('❌ Error during data extraction:', error);
-        return 0;
-    }
+  } catch (error) {
+    console.error('❌ Error during data extraction:', error);
+    return 0;
+  }
 };
 
 // Add retry configuration for this specific test
@@ -455,7 +464,7 @@ test('Extract Complete Market Data', async ({ browser }) => {
 
     const priceText = await fetchGSecData(mcPage, 'https://in.investing.com/rates-bonds/india-10-year-bond-yield-historical-data');
     console.log('📊 Final price text:', priceText);
-    
+
     await mcPage.close();
 
     const currencyData = await extractCurrencyData(browser);
@@ -483,19 +492,24 @@ test('Extract Complete Market Data', async ({ browser }) => {
     const { gold, crudeoil, silver } = formatSelectedCommodities(commodityData);
     console.log('\nFormatted Commodities:', { gold, crudeoil, silver });
 
-    
+
     let BSEFormattedData = '';
     let NSEFormattedData = '';
 
-    if (listingTodayData && listingTodayData.length > 0) {
-      const BSEData = listingTodayData.filter(item => item.currentPriceBSE && item.currentPriceBSE !== '-');
-      const NSEData = listingTodayData.filter(item => item.currentPriceNSE && item.currentPriceNSE !== '-');
-      BSEFormattedData = `${BSEData[0].companyName} : BSE SME`;
-      NSEFormattedData = `${NSEData[0].companyName} : NSE SME`;
+    if (listingTodayData?.length) {
+      const BSEData = listingTodayData.find(x => x.currentPriceBSE && x.currentPriceBSE !== '-');
+      const NSEData = listingTodayData.find(x => x.currentPriceNSE && x.currentPriceNSE !== '-');
+
+      if (BSEData) BSEFormattedData = `${BSEData.companyName} : BSE SME`;
+      if (NSEData) NSEFormattedData = `${NSEData.companyName} : NSE SME`;
     }
+
     console.log("📊 BSE Formatted Data:", BSEFormattedData, "");
     console.log("📊 NSE Formatted Data:", NSEFormattedData, "");
-    const formattedListingTodsayData = `${BSEFormattedData}\n${NSEFormattedData}`;
+    let formattedListingTodsayData = `${BSEFormattedData}\n${NSEFormattedData}`;
+    if(!BSEFormattedData && !NSEFormattedData){
+      formattedListingTodsayData = '';
+    }
 
     // Calculate current date in IST timezone
     const now = new Date();
