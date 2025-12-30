@@ -508,7 +508,7 @@ test('Extract Complete Market Data', async ({ browser }) => {
     console.log("📊 NSE Formatted Data:", NSEFormattedData, "");
     let formattedListingTodsayData = `${BSEFormattedData}\n${NSEFormattedData}`;
     if(!BSEFormattedData && !NSEFormattedData){
-      formattedListingTodsayData = '';
+      formattedListingTodsayData = ''; 
     }
 
     // Calculate current date in IST timezone
