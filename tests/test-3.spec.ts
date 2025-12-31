@@ -261,7 +261,7 @@ function formatAllCurrencies(
   return commodities.reduce(
     (acc: Record<string, string>, item: CurrencyData) => {
       const key = item.symbol.replace(/[\^=]/g, '');
-      acc[key] = `${item.price} (${parseFloat(item.priceChange) > 0 ? '' : ''}${item.priceChange}, ${cleanValue(item.percentChange)})`;
+      acc[key] = `${item.price} (${parseFloat(item.priceChange) > 0 ? '' : ''}${item.priceChange}, ${cleanValue(item.percentChange)})%`;
       return acc;
     },
     {}
