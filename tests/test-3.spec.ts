@@ -1,6 +1,6 @@
 import { test, expect, Page, Browser } from '@playwright/test';
 import axios from 'axios';
-// PREMARKET DATA(CURRENCY,COMMODITY,FII DII)
+
 // TypeScript interfaces
 interface FIIDIIActivityData {
   DateOfTable: string;
@@ -49,201 +49,241 @@ test.use({
   headless: true,
 });
 
-// Extract FII/DII data
+// Generic retry wrapper function
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  maxAttempts: number = 3,
+  delayMs: number = 2000,
+  fallback: T
+): Promise<T> {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      console.log(`🔄 Attempt ${attempt}/${maxAttempts}...`);
+      return await fn();
+    } catch (error) {
+      console.log(`❌ Attempt ${attempt} failed: ${error instanceof Error ? error.message : error}`);
+      if (attempt === maxAttempts) {
+        console.log(`⚠️ Max attempts reached, returning fallback value`);
+        return fallback;
+      }
+      console.log(`⏳ Waiting ${delayMs}ms before retry...`);
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+    }
+  }
+  return fallback;
+}
+
+// Extract FII/DII data with retry logic
 async function extractFIIDIIActivityData(page: Page): Promise<FIIDIIActivityData> {
-  console.log('\n--- Starting FII/DII Data Extraction ---');
+  return withRetry(async () => {
+    console.log('\n--- Starting FII/DII Data Extraction ---');
 
-  await page.goto('https://www.moneycontrol.com/stocks/marketstats/fii_dii_activity/index.php', {
-    waitUntil: 'domcontentloaded',
-    timeout: 60000
-  });
-
-  await page.waitForTimeout(2000);
-
-  try {
-    const noThanksButton = page.getByRole('button', { name: 'No thanks' });
-    await noThanksButton.waitFor({ state: 'visible', timeout: 5000 });
-    await noThanksButton.click();
-    console.log('Modal "No thanks" button clicked.');
-  } catch (error) {
-    console.log('Modal did not appear or button was not found. Continuing...');
-  }
-
-  const firstFiiLeftDiv = page.locator('.fidileft').first();
-  await expect(firstFiiLeftDiv).toBeVisible({ timeout: 20000 });
-
-  const secondTable = firstFiiLeftDiv.getByRole('table').nth(1);
-  await expect(secondTable).toBeVisible({ timeout: 15000 });
-
-  const firstRowCells = await secondTable.locator('tbody tr').first().locator('td').allInnerTexts();
-
-  const [
-    DateOfTable,
-    GrossPurchaseFII,
-    GrossSalesFII,
-    NetSalesFII,
-    GrossPurchaseDII,
-    GrossSalesDII,
-    NetSalesDII
-  ] = firstRowCells;
-
-  return {
-    DateOfTable,
-    GrossPurchaseFII,
-    GrossSalesFII,
-    NetSalesFII,
-    GrossPurchaseDII,
-    GrossSalesDII,
-    NetSalesDII
-  };
-}
-
-// Extract commodity data
-async function extractCommodityData(page: Page): Promise<CommodityRowData[]> {
-  console.log('\n--- Starting Commodity Data Extraction ---');
-
-  await page.goto('https://www.moneycontrol.com/commodity/', {
-    waitUntil: 'domcontentloaded',
-    timeout: 60000
-  });
-
-  await page.waitForTimeout(2000);
-
-  try {
-    const noThanksButton = page.getByRole('button', { name: 'No thanks' });
-    await noThanksButton.waitFor({ state: 'visible', timeout: 5000 });
-    await noThanksButton.click();
-    console.log('Modal "No thanks" button clicked.');
-  } catch (error) {
-    console.log('Modal did not appear or button was not found. Continuing...');
-  }
-
-  await page.getByRole('listitem').filter({ hasText: /^MCX$/ }).click();
-  await page.getByRole('heading', { name: 'MAJOR COMMODITIES' }).click();
-
-  const table = page.getByRole('table').first();
-  await expect(table).toBeVisible({ timeout: 15000 });
-
-  const headers = await table.locator('thead th').allInnerTexts();
-  const cleanHeaders = headers.map((h: string) => h.trim());
-
-  const dataRows = await table.locator('tbody tr').all();
-  console.log(`Found ${dataRows.length} data rows in the table.`);
-
-  const tableData: CommodityRowData[] = [];
-
-  for (const row of dataRows) {
-    const cellValues = await row.locator('td').allInnerTexts();
-
-    const rowData = cleanHeaders.reduce((obj: Record<string, string>, header, index) => {
-      obj[header] = cellValues[index] || '';
-      return obj;
-    }, {} as Record<string, string>);
-
-    tableData.push(rowData);
-  }
-
-  return tableData;
-}
-
-// Extract currency data
-async function extractCurrencyData(browser: Browser): Promise<CurrencyData[]> {
-  console.log('\n--- Starting Currency/Index Data Extraction ---');
-
-  const currencyUrls = [
-    'https://finance.yahoo.com/quote/INR=X/',
-    'https://finance.yahoo.com/quote/EURINR=X/',
-    'https://finance.yahoo.com/quote/GBPINR=X/',
-    'https://finance.yahoo.com/quote/%5EDJI/',
-    'https://finance.yahoo.com/quote/%5ENDX/',
-    'https://finance.yahoo.com/quote/%5EGDAXI/',
-    'https://finance.yahoo.com/quote/%5EHSI/',
-    'https://finance.yahoo.com/quote/%5EN225/'
-  ];
-
-  const currencyData: CurrencyData[] = [];
-
-  for (const url of currencyUrls) {
-    const page = await browser.newPage({
-      viewport: { width: 1920, height: 1080 },
-      extraHTTPHeaders: {
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Sec-Ch-Ua': '"Not A(Brand";v="99", "Google Chrome";v="121", "Chromium";v="121"',
-        'Sec-Ch-Ua-Mobile': '?0',
-        'Sec-Ch-Ua-Platform': '"Windows"',
-        'Sec-Fetch-Dest': 'document',
-        'Sec-Fetch-Mode': 'navigate',
-        'Sec-Fetch-Site': 'none',
-        'Sec-Fetch-User': '?1',
-        'Upgrade-Insecure-Requests': '1',
-      },
+    await page.goto('https://www.moneycontrol.com/stocks/marketstats/fii_dii_activity/index.php', {
+      waitUntil: 'domcontentloaded',
+      timeout: 60000
     });
 
+    await page.waitForLoadState('networkidle');
+
+    // Handle potential modal
     try {
-      console.log(`\nExtracting data from: ${url}`);
-
-      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
-      await page.waitForTimeout(2000);
-
-      // Handle Yahoo Finance consent modal
-      try {
-        const consentButton = page.getByTestId('qc-cmp-yes-button');
-        await consentButton.waitFor({ state: 'visible', timeout: 3000 });
-        await consentButton.click();
-        console.log('Consent modal accepted.');
-      } catch (error) {
-        // No consent modal, continue
-      }
-
-      const symbol = decodeURIComponent(url.split('/').slice(-2)[0]);
-
-      // Extract price
-      const priceElement = page.locator('[data-testid="qsp-price"]');
-      await priceElement.waitFor({ state: 'visible', timeout: 10000 });
-      const price = await priceElement.innerText();
-
-      // Extract price change and percent change
-      const priceChangeElement = page.locator('[data-testid="qsp-price-change"]');
-      await priceChangeElement.waitFor({ state: 'visible', timeout: 10000 });
-      const priceChange = await priceChangeElement.innerText();
-
-      const percentChangeElement = page.locator('[data-testid="qsp-price-change-percent"]');
-      await percentChangeElement.waitFor({ state: 'visible', timeout: 10000 });
-      const percentChange = await percentChangeElement.innerText();
-
-      // Extract instrument name
-      let instrumentName = symbol;
-      try {
-        const nameElement = page.locator('h1').first();
-        instrumentName = await nameElement.innerText();
-      } catch (error) {
-        // Fallback to symbol
-      }
-
-      const data: CurrencyData = {
-        symbol: symbol,
-        name: instrumentName.trim(),
-        price: price.trim(),
-        priceChange: priceChange.trim(),
-        percentChange: percentChange.trim(),
-        url: url
-      };
-
-      currencyData.push(data);
-
-      console.log(`✓ ${instrumentName.trim()}`);
-      console.log(`  Price: ${price.trim()} | Change: ${priceChange.trim()} | % Change: ${percentChange.replace(/^\(|\)$/g, '')}`);
-
-    } catch (error: unknown) {
-      console.error(error instanceof Error ? error.message : error);
+      const noThanksButton = page.getByRole('button', { name: 'No thanks' });
+      await noThanksButton.waitFor({ state: 'visible', timeout: 5000 });
+      await noThanksButton.click();
+      console.log('Modal dismissed.');
+    } catch {
+      console.log('No modal found.');
     }
-    finally {
-      await page.close();
-    }
-  }
 
-  console.log(`\nCurrency/Index Data Extraction Complete: ${currencyData.length} instruments processed.`);
-  return currencyData;
+    // Pick the first visible table body row inside .fidileft
+    const rowLocator = page.locator('.fidileft table tbody tr').first();
+
+    // Get all cell values (td)
+    const cells = rowLocator.locator('td');
+
+    const values = await cells.allTextContents();
+
+    const [
+      DateOfTable,
+      GrossPurchaseFII,
+      GrossSalesFII,
+      NetSalesFII,
+      GrossPurchaseDII,
+      GrossSalesDII,
+      NetSalesDII
+    ] = values;
+
+    // Trim extra whitespace
+    return {
+      DateOfTable: DateOfTable.trim(),
+      GrossPurchaseFII: GrossPurchaseFII.trim(),
+      GrossSalesFII: GrossSalesFII.trim(),
+      NetSalesFII: NetSalesFII.trim(),
+      GrossPurchaseDII: GrossPurchaseDII.trim(),
+      GrossSalesDII: GrossSalesDII.trim(),
+      NetSalesDII: NetSalesDII.trim()
+    };
+  }, 3, 2000, {
+    DateOfTable: '',
+    GrossPurchaseFII: '',
+    GrossSalesFII: '',
+    NetSalesFII: '',
+    GrossPurchaseDII: '',
+    GrossSalesDII: '',
+    NetSalesDII: ''
+  });
+}
+
+// Extract commodity data with retry logic
+async function extractCommodityData(page: Page): Promise<CommodityRowData[]> {
+  return withRetry(async () => {
+    console.log('\n--- Starting Commodity Data Extraction ---');
+
+    await page.goto('https://www.moneycontrol.com/commodity/', {
+      waitUntil: 'domcontentloaded',
+      timeout: 60000
+    });
+
+    await page.waitForTimeout(2000);
+
+    try {
+      const noThanksButton = page.getByRole('button', { name: 'No thanks' });
+      await noThanksButton.waitFor({ state: 'visible', timeout: 5000 });
+      await noThanksButton.click();
+      console.log('Modal "No thanks" button clicked.');
+    } catch (error) {
+      console.log('Modal did not appear or button was not found. Continuing...');
+    }
+
+    await page.getByRole('listitem').filter({ hasText: /^MCX$/ }).click();
+    await page.getByRole('heading', { name: 'MAJOR COMMODITIES' }).click();
+
+    const table = page.getByRole('table').first();
+    await expect(table).toBeVisible({ timeout: 15000 });
+
+    const headers = await table.locator('thead th').allInnerTexts();
+    const cleanHeaders = headers.map((h: string) => h.trim());
+
+    const dataRows = await table.locator('tbody tr').all();
+    console.log(`Found ${dataRows.length} data rows in the table.`);
+
+    const tableData: CommodityRowData[] = [];
+
+    for (const row of dataRows) {
+      const cellValues = await row.locator('td').allInnerTexts();
+
+      const rowData = cleanHeaders.reduce((obj: Record<string, string>, header, index) => {
+        obj[header] = cellValues[index] || '';
+        return obj;
+      }, {} as Record<string, string>);
+
+      tableData.push(rowData);
+    }
+
+    return tableData;
+  }, 3, 2000, []);
+}
+
+// Extract currency data with retry logic
+async function extractCurrencyData(browser: Browser): Promise<CurrencyData[]> {
+  return withRetry(async () => {
+    console.log('\n--- Starting Currency/Index Data Extraction ---');
+
+    const currencyUrls = [
+      'https://finance.yahoo.com/quote/INR=X/',
+      'https://finance.yahoo.com/quote/EURINR=X/',
+      'https://finance.yahoo.com/quote/GBPINR=X/',
+      'https://finance.yahoo.com/quote/%5EDJI/',
+      'https://finance.yahoo.com/quote/%5ENDX/',
+      'https://finance.yahoo.com/quote/%5EGDAXI/',
+      'https://finance.yahoo.com/quote/%5EHSI/',
+      'https://finance.yahoo.com/quote/%5EN225/'
+    ];
+
+    const currencyData: CurrencyData[] = [];
+
+    for (const url of currencyUrls) {
+      const page = await browser.newPage({
+        viewport: { width: 1920, height: 1080 },
+        extraHTTPHeaders: {
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Sec-Ch-Ua': '"Not A(Brand";v="99", "Google Chrome";v="121", "Chromium";v="121"',
+          'Sec-Ch-Ua-Mobile': '?0',
+          'Sec-Ch-Ua-Platform': '"Windows"',
+          'Sec-Fetch-Dest': 'document',
+          'Sec-Fetch-Mode': 'navigate',
+          'Sec-Fetch-Site': 'none',
+          'Sec-Fetch-User': '?1',
+          'Upgrade-Insecure-Requests': '1',
+        },
+      });
+
+      try {
+        console.log(`\nExtracting data from: ${url}`);
+
+        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+        await page.waitForTimeout(2000);
+
+        // Handle Yahoo Finance consent modal
+        try {
+          const consentButton = page.getByTestId('qc-cmp-yes-button');
+          await consentButton.waitFor({ state: 'visible', timeout: 3000 });
+          await consentButton.click();
+          console.log('Consent modal accepted.');
+        } catch (error) {
+          // No consent modal, continue
+        }
+
+        const symbol = decodeURIComponent(url.split('/').slice(-2)[0]);
+
+        // Extract price
+        const priceElement = page.locator('[data-testid="qsp-price"]');
+        await priceElement.waitFor({ state: 'visible', timeout: 10000 });
+        const price = await priceElement.innerText();
+
+        // Extract price change and percent change
+        const priceChangeElement = page.locator('[data-testid="qsp-price-change"]');
+        await priceChangeElement.waitFor({ state: 'visible', timeout: 10000 });
+        const priceChange = await priceChangeElement.innerText();
+
+        const percentChangeElement = page.locator('[data-testid="qsp-price-change-percent"]');
+        await percentChangeElement.waitFor({ state: 'visible', timeout: 10000 });
+        const percentChange = await percentChangeElement.innerText();
+
+        // Extract instrument name
+        let instrumentName = symbol;
+        try {
+          const nameElement = page.locator('h1').first();
+          instrumentName = await nameElement.innerText();
+        } catch (error) {
+          // Fallback to symbol
+        }
+
+        const data: CurrencyData = {
+          symbol: symbol,
+          name: instrumentName.trim(),
+          price: price.trim(),
+          priceChange: priceChange.trim(),
+          percentChange: percentChange.trim(),
+          url: url
+        };
+
+        currencyData.push(data);
+
+        console.log(`✓ ${instrumentName.trim()}`);
+        console.log(`  Price: ${price.trim()} | Change: ${priceChange.trim()} | % Change: ${percentChange.replace(/^\(|\)$/g, '')}`);
+
+      } catch (error: unknown) {
+        console.error(`❌ Error extracting data from ${url}: ${error instanceof Error ? error.message : error}`);
+        // Continue with other URLs even if one fails
+      } finally {
+        await page.close();
+      }
+    }
+
+    console.log(`\nCurrency/Index Data Extraction Complete: ${currencyData.length} instruments processed.`);
+    return currencyData;
+  }, 3, 2000, []);
 }
 
 function cleanValue(str: string): string {
@@ -253,21 +293,18 @@ function cleanValue(str: string): string {
   return value > 0 ? `+${value}` : `${value}`;
 }
 
-
-
 function formatAllCurrencies(
   commodities: CurrencyData[]
 ): Record<string, string> {
   return commodities.reduce(
     (acc: Record<string, string>, item: CurrencyData) => {
       const key = item.symbol.replace(/[\^=]/g, '');
-      acc[key] = `${item.price} (${parseFloat(item.priceChange) > 0 ? '' : ''}${item.priceChange}, ${cleanValue(item.percentChange)})%`;
+      acc[key] = `${item.price} (${parseFloat(item.priceChange) > 0 ? '+' : ''}${item.priceChange}, ${cleanValue(item.percentChange)})%`;
       return acc;
     },
     {}
   );
 }
-
 
 function formatSelectedCommodities(
   commodities: CommodityRowData[]
@@ -296,119 +333,113 @@ function formatSelectedCommodities(
   };
 }
 
+// Fetch listing today data with retry logic
 const fetchListingTodayData = async (page: Page, url: string) => {
-  try {
-    await page.goto(url, {
-      waitUntil: 'domcontentloaded',
-      timeout: 60000,
-    });
-
-    await page.waitForSelector('#report_table');
-
-    const tableData = await page.$$eval('#report_table tbody tr', (rows) => {
-      // Read and clean headers
-      const rawHeaders = Array.from(
-        document.querySelectorAll('#report_table thead th')
-      ).map(th => (th.textContent || '').trim());
-
-      // Map raw headers → friendly keys
-      const headerMap: Record<string, string> = {
-        'Company Name▲▼': 'companyName',
-        'Listing Date▲▼': 'listingDate',
-        'Issue Price (Rs)▲▼': 'issuePrice',
-        'Listing Day - Close Price (Rs)▲▼': 'closePrice',
-        'Listing Day Gain / Loss (%)▲▼': 'listingGainPct',
-        'Current Price at BSE (Rs)▲▼': 'currentPriceBSE',
-        'Current Price at NSE (Rs)▲▼': 'currentPriceNSE',
-        'Gain / Loss (%)▲▼': 'overallGainPct'
-      };
-
-      return Array.from(rows).map(row => {
-        const cells = Array.from(row.querySelectorAll('td'));
-        const obj: Record<string, string> = {};
-
-        rawHeaders.forEach((raw, i) => {
-          const key = headerMap[raw] || raw;   // fallback if header missing
-          obj[key] = cells[i]?.textContent?.trim() || '';
-        });
-
-        return obj;
+  return withRetry(async () => {
+    try {
+      await page.goto(url, {
+        waitUntil: 'domcontentloaded',
+        timeout: 60000,
       });
-    });
 
-    const today = new Date();
-    // const twentyDaysAgo = new Date(today);
-    // twentyDaysAgo.setDate(today.getDate() - 20);
+      await page.waitForSelector('#report_table');
 
-    // --- filter by today's date ---
-    const todayFormatted = today.toLocaleDateString('en-US', {
-      month: 'short',
-      day: '2-digit',
-      year: 'numeric',
-      timeZone: 'Asia/Kolkata'
-    });
+      const tableData = await page.$$eval('#report_table tbody tr', (rows) => {
+        // Read and clean headers
+        const rawHeaders = Array.from(
+          document.querySelectorAll('#report_table thead th')
+        ).map(th => (th.textContent || '').trim());
 
-    const listingToday = tableData.filter(row => {
-      if (!row.listingDate) return false;
+        // Map raw headers → friendly keys
+        const headerMap: Record<string, string> = {
+          'Company Name▲▼': 'companyName',
+          'Listing Date▲▼': 'listingDate',
+          'Issue Price (Rs)▲▼': 'issuePrice',
+          'Listing Day - Close Price (Rs)▲▼': 'closePrice',
+          'Listing Day Gain / Loss (%)▲▼': 'listingGainPct',
+          'Current Price at BSE (Rs)▲▼': 'currentPriceBSE',
+          'Current Price at NSE (Rs)▲▼': 'currentPriceNSE',
+          'Gain / Loss (%)▲▼': 'overallGainPct'
+        };
 
-      const d = new Date(row.listingDate);
-      const today = new Date();
+        return Array.from(rows).map(row => {
+          const cells = Array.from(row.querySelectorAll('td'));
+          const obj: Record<string, string> = {};
 
-      return (
-        d.getFullYear() === today.getFullYear() &&
-        d.getMonth() === today.getMonth() &&
-        d.getDate() === today.getDate()
-      );
-    });
+          rawHeaders.forEach((raw, i) => {
+            const key = headerMap[raw] || raw;   // fallback if header missing
+            obj[key] = cells[i]?.textContent?.trim() || '';
+          });
 
+          return obj;
+        });
+      });
 
-    console.log('📊 Clean listing rows:', listingToday);
-    return listingToday;
-  } catch (error) {
-    console.error('❌ Error during data extraction:', error);
-    return null;
-  }
+      // Filter by today's date
+      const listingToday = tableData.filter(row => {
+        if (!row.listingDate) return false;
+
+        const d = new Date(row.listingDate);
+        const today = new Date();
+
+        return (
+          d.getFullYear() === today.getFullYear() &&
+          d.getMonth() === today.getMonth() &&
+          d.getDate() === today.getDate()
+        );
+      });
+
+      console.log('📊 Clean listing rows:', listingToday);
+      return listingToday;
+    } catch (error) {
+      console.error('❌ Error during data extraction:', error);
+      throw error; // Re-throw to be caught by retry wrapper
+    }
+  }, 3, 2000, []);
 };
 
+// Fetch GSec data with retry logic
 const fetchGSecData = async (page: Page, url: string) => {
-  try {
-    await page.goto(url, {
-      waitUntil: 'domcontentloaded',
-      timeout: 60000,
-    });
+  return withRetry(async () => {
+    try {
+      await page.goto(url, {
+        waitUntil: 'domcontentloaded',
+        timeout: 60000,
+      });
 
-    console.log('✅ Page ready, test continues...');
+      console.log('✅ Page ready, test continues...');
 
-    // Wait for the element to be available
-    const priceLocator = page.locator('[data-test="instrument-price-last"]');
-    await priceLocator.waitFor();
+      // Wait for the element to be available
+      const priceLocator = page.locator('[data-test="instrument-price-last"]');
+      await priceLocator.waitFor();
 
-    // Get its text
-    const priceText = await priceLocator.innerText();
-    console.log('📊 Current price:', priceText);
+      // Get its text
+      const priceText = await priceLocator.innerText();
+      console.log('📊 Current price:', priceText);
 
-    return parseFloat(priceText);
+      return parseFloat(priceText);
 
-  } catch (error) {
-    console.error('❌ Error during data extraction:', error);
-    return 0;
-  }
+    } catch (error) {
+      console.error('❌ Error during data extraction:', error);
+      throw error; // Re-throw to be caught by retry wrapper
+    }
+  }, 3, 2000, 0);
 };
 
 // Add retry configuration for this specific test
 test.describe.configure({ retries: 2 });
 
 const updatePostMarket = async () => {
-
   const payload = {
     data: {
       Has_to_Reflect_on_PreMarket: true
     }
-  }
+  };
   const postMarketUrl = 'https://admin.equivision.in/api/postmarkets/d99w2c4wm9yj00rwdi58ebye';
+  
   try {
     const response = await fetch(postMarketUrl, {
-      method: 'PUT', // Using PUT to update existing record
+      method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${EQUID_API_TOKEN}`,
@@ -432,8 +463,7 @@ const updatePostMarket = async () => {
       console.error(error);
     }
   }
-
-}
+};
 
 // Main test
 test('Extract Complete Market Data', async ({ browser }) => {
@@ -458,6 +488,8 @@ test('Extract Complete Market Data', async ({ browser }) => {
     });
 
     const fiiDiiData = await extractFIIDIIActivityData(mcPage);
+    console.log('📊 Final FII/DII data:', fiiDiiData);
+    
     const commodityData = await extractCommodityData(mcPage);
     const listingTodayData = await fetchListingTodayData(mcPage, 'https://www.chittorgarh.com/report/ipo-listing-date-check-status-price-bse-nse/25/sme/');
     console.log('📊 Final listing today data:', listingTodayData);
@@ -492,7 +524,6 @@ test('Extract Complete Market Data', async ({ browser }) => {
     const { gold, crudeoil, silver } = formatSelectedCommodities(commodityData);
     console.log('\nFormatted Commodities:', { gold, crudeoil, silver });
 
-
     let BSEFormattedData = '';
     let NSEFormattedData = '';
 
@@ -506,9 +537,9 @@ test('Extract Complete Market Data', async ({ browser }) => {
 
     console.log("📊 BSE Formatted Data:", BSEFormattedData, "");
     console.log("📊 NSE Formatted Data:", NSEFormattedData, "");
-    let formattedListingTodsayData = `${BSEFormattedData}\n${NSEFormattedData}`;
-    if(!BSEFormattedData && !NSEFormattedData){
-      formattedListingTodsayData = ''; 
+    let formattedListingTodayData = `${BSEFormattedData}\n${NSEFormattedData}`;
+    if (!BSEFormattedData && !NSEFormattedData) {
+      formattedListingTodayData = '';
     }
 
     // Calculate current date in IST timezone
@@ -522,7 +553,7 @@ test('Extract Complete Market Data', async ({ browser }) => {
     const payload = {
       data: {
         // Map your scraped data to Strapi fields
-        Date: currentISODate, // Add current date in YYYY-MM-DD format
+        Date: currentISODate,
         USDINR: INRX || '',
         EURINR: EURINRX || '',
         GBPINR: GBPINRX || '',
@@ -538,10 +569,12 @@ test('Extract Complete Market Data', async ({ browser }) => {
         SellValueDii: parseFloat(fiiDiiData?.GrossSalesDII.replace(/,/g, '')) || 0,
         BuyValueFii: parseFloat(fiiDiiData?.GrossPurchaseFII.replace(/,/g, '')) || 0,
         SellValueFii: parseFloat(fiiDiiData?.GrossSalesFII.replace(/,/g, '')) || 0,
-        IpoUpdates: formattedListingTodsayData || '',
+        IpoUpdates: formattedListingTodayData || '',
         DebtMarketHighlight: priceText.toFixed(3) || 0
       }
     };
+    console.log('payload: ', payload);
+    
 
     // Validate API token
     if (!EQUID_API_TOKEN) {
@@ -576,9 +609,7 @@ test('Extract Complete Market Data', async ({ browser }) => {
       console.error(error instanceof Error ? error.message : error);
     }
 
-
   } catch (error: unknown) {
     console.error(error instanceof Error ? error.message : error);
   }
-
 });
