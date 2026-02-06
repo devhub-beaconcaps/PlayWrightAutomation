@@ -85,7 +85,7 @@ function mapToStrapiFormat(extractedData: Array<{ [key: string]: string }>): { [
 
   // Set current date in YYYY-MM-DD format for IST (UTC+5:30)
   const now = new Date();
-  const istTime = new Date(now.toLocaleString("en-US", {timeZone: "Asia/Kolkata"}));
+  const istTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
   const year = istTime.getFullYear();
   const month = String(istTime.getMonth() + 1).padStart(2, '0');
   const day = String(istTime.getDate()).padStart(2, '0');
@@ -194,6 +194,21 @@ async function extractTableData(page: Page, targetIndices: string[]) {
 }
 
 
+function getTodayDayName() {
+  const days = [
+    "Sunday",
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday"
+  ];
+
+  const today = new Date();
+  return days[today.getDay()];
+}
+
 // -----------------------------
 
 // Test Configuration
@@ -201,113 +216,128 @@ async function extractTableData(page: Page, targetIndices: string[]) {
 
 test.describe.configure({ retries: 2 });
 
+
+
 test('Fetch NSE + BSE indices data and post to Strapi', async ({ page }) => {
-  console.log("\n====== Starting Indices Extraction & Strapi Post ======\n");
 
-  // -----------------------------
+  const todayDayName = getTodayDayName();
+  console.log(`\n=== Today is: ${todayDayName} ===\n`);
 
-  // Load NSE Page
-  // -----------------------------
+  if (todayDayName !== 'Saturday' && todayDayName !== 'Sunday') {
+    try {
+      console.log("\n====== Starting Indices Extraction & Strapi Post ======\n");
 
-  console.log("Step 1: Loading NSE data...");
-  await page.goto('https://www.moneycontrol.com/markets/indian-indices/live-markets?ex=N', {
-    waitUntil: 'domcontentloaded',
-    timeout: 60000
-  });
-  await safeWait(page, 2500);
+      // -----------------------------
 
-  // Handle Modal
-  const noThanksBtn = page.getByRole('button', { name: /no thanks/i });
-  if (await noThanksBtn.isVisible()) {
-    console.log("  Modal detected → Clicking No Thanks");
-    await noThanksBtn.click().catch(() => { });
-    await safeWait(page, 1500);
+      // Load NSE Page
+      // -----------------------------
+
+      console.log("Step 1: Loading NSE data...");
+      await page.goto('https://www.moneycontrol.com/markets/indian-indices/live-markets?ex=N', {
+        waitUntil: 'domcontentloaded',
+        timeout: 60000
+      });
+      await safeWait(page, 2500);
+
+      // Handle Modal
+      const noThanksBtn = page.getByRole('button', { name: /no thanks/i });
+      if (await noThanksBtn.isVisible()) {
+        console.log("  Modal detected → Clicking No Thanks");
+        await noThanksBtn.click().catch(() => { });
+        await safeWait(page, 1500);
+      } else {
+        console.log("No modal detected.");
+      }
+
+      // Extract NSE Data
+      const targetNSE = [
+        'NIFTY 50',
+        'NIFTY BANK',
+        'NIFTY MIDCAP 100',
+        'NIFTY SMALLCAP 100',
+        'NIFTY MICROCAP 250'
+      ];
+      const NSEdata = await extractTableData(page, targetNSE);
+      console.log("  NSE extracted:", NSEdata.length, "records");
+
+
+      // -----------------------------
+
+      // Load BSE Page
+      // -----------------------------
+
+      console.log("\nStep 2: Loading BSE data...");
+      await page.goto('https://www.moneycontrol.com/markets/indian-indices/live-markets?ex=B', {
+        waitUntil: 'domcontentloaded',
+        timeout: 60000
+      });
+      await safeWait(page, 2500);
+
+      // Handle Modal
+      const noThanksBtnsecond = page.getByRole('button', { name: /no thanks/i });
+      if (await noThanksBtnsecond.isVisible()) {
+        console.log("  Modal detected → Clicking No Thanks");
+        await noThanksBtnsecond.click().catch(() => { });
+        await safeWait(page, 1500);
+      }
+
+      // Extract BSE Data
+      const targetBSE = [
+        'SENSEX',
+        'BSE MIDCAP',
+        'BSE SMALLCAP'
+      ];
+      const BSEdata = await extractTableData(page, targetBSE);
+      console.log("  BSE extracted:", BSEdata.length, "records");
+
+
+      // -----------------------------
+
+      // Process and Post Data
+      // -----------------------------
+
+      const combined = [...NSEdata, ...BSEdata];
+      console.log("\nStep 3: Combined data:", combined.length, "records");
+
+      console.log("\n----- FINAL EXTRACTED DATA -----");
+      console.log(JSON.stringify(combined, null, 2));
+      console.log(`\nTotal Records: ${combined.length}`);
+      console.log("--------------------------------\n");
+
+      // Map to Strapi format
+      console.log("Step 4: Mapping to Strapi format...");
+      const strapiData = mapToStrapiFormat(combined);
+
+      console.log("\n----- STRAPI FORMATTED DATA -----");
+      console.log(JSON.stringify(strapiData, null, 2));
+      console.log("---------------------------------\n");
+
+      // Post to Strapi
+      console.log("Step 5: Posting to Strapi...");
+
+      // Validate API token
+      if (!EQUID_API_TOKEN || EQUID_API_TOKEN === 'your-api-token-here') {
+        console.error("  ❌ CRITICAL: Strapi API token not configured!");
+        console.error("     Set STRAPI_API_TOKEN environment variable");
+        console.log("\n====== Test Completed (Strapi post skipped) ======\n");
+        return; // Skip posting but don't fail the test
+      }
+
+      try {
+        await postToStrapi(strapiData, EQUID_API_TOKEN);
+        console.log("  ✅ Strapi post completed successfully");
+      } catch (error) {
+        console.error("  ❌ Strapi post failed:", error);
+        // Uncomment to fail the test on Strapi errors
+        // throw error;
+      }
+
+      console.log("\n====== Extraction & Post Complete ======\n");
+    } catch (error) {
+      console.log('error in postmarket: ', error);
+    }
   } else {
-    console.log("No modal detected.");
+    console.log('post market is off on Saturday and Sunday, skipping the test.');
   }
 
-  // Extract NSE Data
-  const targetNSE = [
-    'NIFTY 50',
-    'NIFTY BANK',
-    'NIFTY MIDCAP 100',
-    'NIFTY SMALLCAP 100',
-    'NIFTY MICROCAP 250'
-  ];
-  const NSEdata = await extractTableData(page, targetNSE);
-  console.log("  NSE extracted:", NSEdata.length, "records");
-
-
-  // -----------------------------
-
-  // Load BSE Page
-  // -----------------------------
-
-  console.log("\nStep 2: Loading BSE data...");
-  await page.goto('https://www.moneycontrol.com/markets/indian-indices/live-markets?ex=B', {
-    waitUntil: 'domcontentloaded',
-    timeout: 60000
-  });
-  await safeWait(page, 2500);
-
-  // Handle Modal
-  const noThanksBtnsecond = page.getByRole('button', { name: /no thanks/i });
-  if (await noThanksBtnsecond.isVisible()) {
-    console.log("  Modal detected → Clicking No Thanks");
-    await noThanksBtnsecond.click().catch(() => { });
-    await safeWait(page, 1500);
-  }
-
-  // Extract BSE Data
-  const targetBSE = [
-    'SENSEX',
-    'BSE MIDCAP',
-    'BSE SMALLCAP'
-  ];
-  const BSEdata = await extractTableData(page, targetBSE);
-  console.log("  BSE extracted:", BSEdata.length, "records");
-
-
-  // -----------------------------
-
-  // Process and Post Data
-  // -----------------------------
-
-  const combined = [...NSEdata, ...BSEdata];
-  console.log("\nStep 3: Combined data:", combined.length, "records");
-
-  console.log("\n----- FINAL EXTRACTED DATA -----");
-  console.log(JSON.stringify(combined, null, 2));
-  console.log(`\nTotal Records: ${combined.length}`);
-  console.log("--------------------------------\n");
-
-  // Map to Strapi format
-  console.log("Step 4: Mapping to Strapi format...");
-  const strapiData = mapToStrapiFormat(combined);
-
-  console.log("\n----- STRAPI FORMATTED DATA -----");
-  console.log(JSON.stringify(strapiData, null, 2));
-  console.log("---------------------------------\n");
-
-  // Post to Strapi
-  console.log("Step 5: Posting to Strapi...");
-  
-  // Validate API token
-  if (!EQUID_API_TOKEN || EQUID_API_TOKEN === 'your-api-token-here') {
-    console.error("  ❌ CRITICAL: Strapi API token not configured!");
-    console.error("     Set STRAPI_API_TOKEN environment variable");
-    console.log("\n====== Test Completed (Strapi post skipped) ======\n");
-    return; // Skip posting but don't fail the test
-  }
-
-  try {
-    await postToStrapi(strapiData, EQUID_API_TOKEN);
-    console.log("  ✅ Strapi post completed successfully");
-  } catch (error) {
-    console.error("  ❌ Strapi post failed:", error);
-    // Uncomment to fail the test on Strapi errors
-    // throw error;
-  }
-
-  console.log("\n====== Extraction & Post Complete ======\n");
 });

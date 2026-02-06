@@ -436,7 +436,7 @@ const updatePostMarket = async () => {
     }
   };
   const postMarketUrl = 'https://admin.equivision.in/api/postmarkets/d99w2c4wm9yj00rwdi58ebye';
-  
+
   try {
     const response = await fetch(postMarketUrl, {
       method: 'PUT',
@@ -465,151 +465,176 @@ const updatePostMarket = async () => {
   }
 };
 
+function getTodayDayName() {
+  const days = [
+    "Sunday",
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday"
+  ];
+
+  const today = new Date();
+  return days[today.getDay()];
+}
+
+
 // Main test
 test('Extract Complete Market Data', async ({ browser }) => {
   test.setTimeout(120000);
 
-  try {
-    console.log('🚀 Starting comprehensive data extraction from all sources...');
+  const todayDayName = getTodayDayName();
+  console.log(`\n=== Today is: ${todayDayName} ===\n`);
 
-    const mcPage = await browser.newPage({
-      viewport: { width: 1920, height: 1080 },
-      extraHTTPHeaders: {
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Sec-Ch-Ua': '"Not A(Brand";v="99", "Google Chrome";v="121", "Chromium";v="121"',
-        'Sec-Ch-Ua-Mobile': '?0',
-        'Sec-Ch-Ua-Platform': '"Windows"',
-        'Sec-Fetch-Dest': 'document',
-        'Sec-Fetch-Mode': 'navigate',
-        'Sec-Fetch-Site': 'none',
-        'Sec-Fetch-User': '?1',
-        'Upgrade-Insecure-Requests': '1',
-      },
-    });
-
-    const fiiDiiData = await extractFIIDIIActivityData(mcPage);
-    console.log('📊 Final FII/DII data:', fiiDiiData);
-    
-    const commodityData = await extractCommodityData(mcPage);
-    const listingTodayData = await fetchListingTodayData(mcPage, 'https://www.chittorgarh.com/report/ipo-listing-date-check-status-price-bse-nse/25/sme/');
-    console.log('📊 Final listing today data:', listingTodayData);
-
-    const priceText = await fetchGSecData(mcPage, 'https://in.investing.com/rates-bonds/india-10-year-bond-yield-historical-data');
-    console.log('📊 Final price text:', priceText);
-
-    await mcPage.close();
-
-    const currencyData = await extractCurrencyData(browser);
-
-    console.log('\n\n========== COMPLETE MARKET DATA ==========\n');
-    console.log('1. FII/DII ACTIVITY DATA:', JSON.stringify(fiiDiiData, null, 2));
-    console.log('\n2. MAJOR COMMODITIES DATA:', JSON.stringify(commodityData, null, 2));
-    console.log('\n3. CURRENCY & INDEX DATA:', JSON.stringify(currencyData, null, 2));
-    console.log('\n========== END OF DATA ==========');
-
-    expect(fiiDiiData.DateOfTable).toBeTruthy();
-    expect(fiiDiiData.GrossPurchaseFII).toBeTruthy();
-    expect(commodityData.length).toBeGreaterThan(0);
-    expect(currencyData.length).toBeGreaterThan(0);
-
-    console.log('\n📊 DATA EXTRACTION SUMMARY:');
-    console.log(`- FII/DII: ${Object.keys(fiiDiiData).length} fields extracted`);
-    console.log(`- Commodities: ${commodityData.length} rows extracted`);
-    console.log(`- Currencies/Indices: ${currencyData.length} instruments extracted`);
-    console.log('\n✅ All data extracted successfully!');
-
-    const { INRX, EURINRX, GBPINRX, DJI, NDX, GDAXI, HSI, N225 } = formatAllCurrencies(currencyData);
-    console.log('\nFormatted Currencies/Indices:', { INRX, EURINRX, GBPINRX, DJI, NDX, GDAXI, HSI, N225 });
-
-    const { gold, crudeoil, silver } = formatSelectedCommodities(commodityData);
-    console.log('\nFormatted Commodities:', { gold, crudeoil, silver });
-
-    let BSEFormattedData = '';
-    let NSEFormattedData = '';
-
-    if (listingTodayData?.length) {
-      const BSEData = listingTodayData.find(x => x.currentPriceBSE && x.currentPriceBSE !== '-');
-      const NSEData = listingTodayData.find(x => x.currentPriceNSE && x.currentPriceNSE !== '-');
-
-      if (BSEData) BSEFormattedData = `${BSEData.companyName} : BSE SME`;
-      if (NSEData) NSEFormattedData = `${NSEData.companyName} : NSE SME`;
-    }
-
-    console.log("📊 BSE Formatted Data:", BSEFormattedData, "");
-    console.log("📊 NSE Formatted Data:", NSEFormattedData, "");
-    let formattedListingTodayData = `${BSEFormattedData}\n${NSEFormattedData}`;
-    if (!BSEFormattedData && !NSEFormattedData) {
-      formattedListingTodayData = '';
-    }
-
-    // Calculate current date in IST timezone
-    const now = new Date();
-    const istTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
-    const year = istTime.getFullYear();
-    const month = String(istTime.getMonth() + 1).padStart(2, '0');
-    const day = String(istTime.getDate()).padStart(2, '0');
-    const currentISODate = `${year}-${month}-${day}`;
-
-    const payload = {
-      data: {
-        // Map your scraped data to Strapi fields
-        Date: currentISODate,
-        USDINR: INRX || '',
-        EURINR: EURINRX || '',
-        GBPINR: GBPINRX || '',
-        Crude: crudeoil || '',
-        Gold: gold || '',
-        Silver: silver || '',
-        DJI: DJI || '',
-        NDX: NDX || '',
-        DAX: GDAXI || '',
-        HSI: HSI || '',
-        Nikkei: N225 || '',
-        BuyValueDii: parseFloat(fiiDiiData?.GrossPurchaseDII.replace(/,/g, '')) || 0,
-        SellValueDii: parseFloat(fiiDiiData?.GrossSalesDII.replace(/,/g, '')) || 0,
-        BuyValueFii: parseFloat(fiiDiiData?.GrossPurchaseFII.replace(/,/g, '')) || 0,
-        SellValueFii: parseFloat(fiiDiiData?.GrossSalesFII.replace(/,/g, '')) || 0,
-        IpoUpdates: formattedListingTodayData || '',
-        DebtMarketHighlight: priceText.toFixed(3) || 0
-      }
-    };
-    console.log('payload: ', payload);
-    
-
-    // Validate API token
-    if (!EQUID_API_TOKEN) {
-      console.error("  ❌ CRITICAL: Strapi API token not configured!");
-      console.error("     Set STRAPI_API_TOKEN environment variable");
-      console.log("\n====== Test Completed (Strapi post skipped) ======\n");
-      return;
-    }
-
+  if (todayDayName !== 'Sunday' && todayDayName !== 'Monday') {
     try {
-      const response = await fetch('https://admin.equivision.in/api/pre-market-updates/nqg7p30n5zan7oyw56g6b25n', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${EQUID_API_TOKEN}`
+      console.log('🚀 Starting comprehensive data extraction from all sources...');
+
+      const mcPage = await browser.newPage({
+        viewport: { width: 1920, height: 1080 },
+        extraHTTPHeaders: {
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Sec-Ch-Ua': '"Not A(Brand";v="99", "Google Chrome";v="121", "Chromium";v="121"',
+          'Sec-Ch-Ua-Mobile': '?0',
+          'Sec-Ch-Ua-Platform': '"Windows"',
+          'Sec-Fetch-Dest': 'document',
+          'Sec-Fetch-Mode': 'navigate',
+          'Sec-Fetch-Site': 'none',
+          'Sec-Fetch-User': '?1',
+          'Upgrade-Insecure-Requests': '1',
         },
-        body: JSON.stringify(payload)
       });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`HTTP ${response.status} ${response.statusText}: ${errorText}`);
+      const fiiDiiData = await extractFIIDIIActivityData(mcPage);
+      console.log('📊 Final FII/DII data:', fiiDiiData);
+
+      const commodityData = await extractCommodityData(mcPage);
+      const listingTodayData = await fetchListingTodayData(mcPage, 'https://www.chittorgarh.com/report/ipo-listing-date-check-status-price-bse-nse/25/sme/');
+      console.log('📊 Final listing today data:', listingTodayData);
+
+      const priceText = await fetchGSecData(mcPage, 'https://in.investing.com/rates-bonds/india-10-year-bond-yield-historical-data');
+      console.log('📊 Final price text:', priceText);
+
+      await mcPage.close();
+
+      const currencyData = await extractCurrencyData(browser);
+
+      console.log('\n\n========== COMPLETE MARKET DATA ==========\n');
+      console.log('1. FII/DII ACTIVITY DATA:', JSON.stringify(fiiDiiData, null, 2));
+      console.log('\n2. MAJOR COMMODITIES DATA:', JSON.stringify(commodityData, null, 2));
+      console.log('\n3. CURRENCY & INDEX DATA:', JSON.stringify(currencyData, null, 2));
+      console.log('\n========== END OF DATA ==========');
+
+      expect(fiiDiiData.DateOfTable).toBeTruthy();
+      expect(fiiDiiData.GrossPurchaseFII).toBeTruthy();
+      expect(commodityData.length).toBeGreaterThan(0);
+      expect(currencyData.length).toBeGreaterThan(0);
+
+      console.log('\n📊 DATA EXTRACTION SUMMARY:');
+      console.log(`- FII/DII: ${Object.keys(fiiDiiData).length} fields extracted`);
+      console.log(`- Commodities: ${commodityData.length} rows extracted`);
+      console.log(`- Currencies/Indices: ${currencyData.length} instruments extracted`);
+      console.log('\n✅ All data extracted successfully!');
+
+      const { INRX, EURINRX, GBPINRX, DJI, NDX, GDAXI, HSI, N225 } = formatAllCurrencies(currencyData);
+      console.log('\nFormatted Currencies/Indices:', { INRX, EURINRX, GBPINRX, DJI, NDX, GDAXI, HSI, N225 });
+
+      const { gold, crudeoil, silver } = formatSelectedCommodities(commodityData);
+      console.log('\nFormatted Commodities:', { gold, crudeoil, silver });
+
+      let BSEFormattedData = '';
+      let NSEFormattedData = '';
+
+      if (listingTodayData?.length) {
+        const BSEData = listingTodayData.find(x => x.currentPriceBSE && x.currentPriceBSE !== '-');
+        const NSEData = listingTodayData.find(x => x.currentPriceNSE && x.currentPriceNSE !== '-');
+
+        if (BSEData) BSEFormattedData = `${BSEData.companyName} : BSE SME`;
+        if (NSEData) NSEFormattedData = `${NSEData.companyName} : NSE SME`;
       }
 
-      const result = await response.json();
-      console.log('✅ Strapi update successful!');
-      console.log('Update result:', result);
+      console.log("📊 BSE Formatted Data:", BSEFormattedData, "");
+      console.log("📊 NSE Formatted Data:", NSEFormattedData, "");
+      let formattedListingTodayData = `${BSEFormattedData}\n${NSEFormattedData}`;
+      if (!BSEFormattedData && !NSEFormattedData) {
+        formattedListingTodayData = '';
+      }
 
-      await updatePostMarket();
+      // Calculate current date in IST timezone
+      const now = new Date();
+      const istTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+      const year = istTime.getFullYear();
+      const month = String(istTime.getMonth() + 1).padStart(2, '0');
+      const day = String(istTime.getDate()).padStart(2, '0');
+      const currentISODate = `${year}-${month}-${day}`;
+
+      const payload = {
+        data: {
+          // Map your scraped data to Strapi fields
+          Date: currentISODate,
+          USDINR: INRX || '',
+          EURINR: EURINRX || '',
+          GBPINR: GBPINRX || '',
+          Crude: crudeoil || '',
+          Gold: gold || '',
+          Silver: silver || '',
+          DJI: DJI || '',
+          NDX: NDX || '',
+          DAX: GDAXI || '',
+          HSI: HSI || '',
+          Nikkei: N225 || '',
+          BuyValueDii: parseFloat(fiiDiiData?.GrossPurchaseDII.replace(/,/g, '')) || 0,
+          SellValueDii: parseFloat(fiiDiiData?.GrossSalesDII.replace(/,/g, '')) || 0,
+          BuyValueFii: parseFloat(fiiDiiData?.GrossPurchaseFII.replace(/,/g, '')) || 0,
+          SellValueFii: parseFloat(fiiDiiData?.GrossSalesFII.replace(/,/g, '')) || 0,
+          IpoUpdates: formattedListingTodayData || '',
+          DebtMarketHighlight: priceText.toFixed(3) || 0
+        }
+      };
+      console.log('payload: ', payload);
+
+
+      // Validate API token
+      if (!EQUID_API_TOKEN) {
+        console.error("  ❌ CRITICAL: Strapi API token not configured!");
+        console.error("     Set STRAPI_API_TOKEN environment variable");
+        console.log("\n====== Test Completed (Strapi post skipped) ======\n");
+        return;
+      }
+
+      try {
+        const response = await fetch('https://admin.equivision.in/api/pre-market-updates/nqg7p30n5zan7oyw56g6b25n', {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${EQUID_API_TOKEN}`
+          },
+          body: JSON.stringify(payload)
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`HTTP ${response.status} ${response.statusText}: ${errorText}`);
+        }
+
+        const result = await response.json();
+        console.log('✅ Strapi update successful!');
+        console.log('Update result:', result);
+
+        await updatePostMarket();
+
+      } catch (error: unknown) {
+        console.error(error instanceof Error ? error.message : error);
+      }
 
     } catch (error: unknown) {
       console.error(error instanceof Error ? error.message : error);
     }
-
-  } catch (error: unknown) {
-    console.error(error instanceof Error ? error.message : error);
+  } else {
+    console.log("PRE Market data extraction skipped on Sundays and Mondays.");
   }
+
+
 });

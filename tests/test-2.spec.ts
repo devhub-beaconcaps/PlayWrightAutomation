@@ -31,9 +31,9 @@ async function extractTableData(
 
   try {
     // Wait for table with multiple strategies
-    await page.waitForSelector('#liveSMEkTable', { 
-      state: 'visible', 
-      timeout: CONFIG.tableWaitTimeout 
+    await page.waitForSelector('#liveSMEkTable', {
+      state: 'visible',
+      timeout: CONFIG.tableWaitTimeout
     }).catch(() => {
       console.log('   ⚠ Table not found via selector, trying locator...');
     });
@@ -70,10 +70,10 @@ async function extractTableData(
 
         // Only include rows with valid Symbol AND valid Open/High/Low values
         // Filter out rows where Open, High, or Low is empty or '-'
-        if (rowData['Symbol']?.trim() && 
-            rowData['Open']?.trim() && rowData['Open'] !== '-' &&
-            rowData['High']?.trim() && rowData['High'] !== '-' &&
-            rowData['Low']?.trim() && rowData['Low'] !== '-') {
+        if (rowData['Symbol']?.trim() &&
+          rowData['Open']?.trim() && rowData['Open'] !== '-' &&
+          rowData['High']?.trim() && rowData['High'] !== '-' &&
+          rowData['Low']?.trim() && rowData['Low'] !== '-') {
           data.push(rowData);
         }
       }
@@ -110,7 +110,7 @@ function parseNumericValue(value: string): number {
  */
 function buildStrapiPayload(gainers: TableRow[], losers: TableRow[]) {
   const payload: { data: { [key: string]: string | number } } = { data: {} };
-  
+
   // Process gainers
   for (let i = 0; i < Math.min(gainers.length, CONFIG.targetRowCount); i++) {
     const gainer = gainers[i];
@@ -119,7 +119,7 @@ function buildStrapiPayload(gainers: TableRow[], losers: TableRow[]) {
     payload.data[`Gainer_${num}_LTP`] = parseNumericValue(gainer['LTP']);
     payload.data[`Gainer_${num}_Change`] = parseNumericValue(gainer['%Chng']);
   }
-  
+
   // Process losers
   for (let i = 0; i < Math.min(losers.length, CONFIG.targetRowCount); i++) {
     const loser = losers[i];
@@ -128,7 +128,7 @@ function buildStrapiPayload(gainers: TableRow[], losers: TableRow[]) {
     payload.data[`Loser_${num}_LTP`] = parseNumericValue(loser['LTP']);
     payload.data[`Loser_${num}_Change`] = parseNumericValue(loser['%Chng']);
   }
-  
+
   return payload;
 }
 
@@ -138,7 +138,7 @@ function buildStrapiPayload(gainers: TableRow[], losers: TableRow[]) {
 async function saveToStrappi(payload: any, attempt = 1) {
   try {
     console.log(`\n☁️  Sending data to Strapi (attempt ${attempt})...`);
-    
+
     const response = await fetch(STRAPI_API_URL, {
       method: 'PUT',
       headers: {
@@ -173,27 +173,27 @@ async function saveToStrappi(payload: any, attempt = 1) {
  */
 async function runTestWithRetry(context: BrowserContext, attempt: number): Promise<void> {
   const page = await context.newPage();
-  
+
   try {
     console.log(`\n🔄 Attempt ${attempt}/${CONFIG.maxRetries + 1}`);
-    
+
     // ✅ Apply stealth scripts
     await context.addInitScript(() => {
-      Object.defineProperty(navigator, 'webdriver', { 
-        get: () => undefined, 
-        configurable: true 
+      Object.defineProperty(navigator, 'webdriver', {
+        get: () => undefined,
+        configurable: true
       });
-      
-      Object.defineProperty(navigator, 'plugins', { 
-        get: () => [1, 2, 3, 4, 5], 
-        configurable: true 
+
+      Object.defineProperty(navigator, 'plugins', {
+        get: () => [1, 2, 3, 4, 5],
+        configurable: true
       });
-      
-      Object.defineProperty(navigator, 'permissions', { 
-        get: () => ({ query: () => Promise.resolve({ state: 'granted' }) }), 
-        configurable: true 
+
+      Object.defineProperty(navigator, 'permissions', {
+        get: () => ({ query: () => Promise.resolve({ state: 'granted' }) }),
+        configurable: true
       });
-      
+
       (window as any).chrome = {
         runtime: {},
         loadTimes: () => ({}),
@@ -223,7 +223,7 @@ async function runTestWithRetry(context: BrowserContext, attempt: number): Promi
     if (!pageTitle || pageTitle.includes('Access Denied')) {
       throw new Error('Page blocked or not loaded correctly');
     }
-    
+
     console.log(`   ✓ Page loaded: ${pageTitle}`);
 
     // Wait for anti-bot challenges
@@ -291,35 +291,65 @@ async function runTestWithRetry(context: BrowserContext, attempt: number): Promi
   }
 }
 
+
+function getTodayDayName() {
+  const days = [
+    "Sunday",
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday"
+  ];
+
+  const today = new Date();
+  return days[today.getDay()];
+}
+
+
 // Main test with manual retry logic
 test('SME Market - Top 5 Gainers and Losers', async ({ browser }) => {
   test.setTimeout(CONFIG.testTimeout);
-  
-  let lastError: Error;
-  
-  for (let attempt = 1; attempt <= CONFIG.maxRetries + 1; attempt++) {
-    const context = await browser.newContext({
-      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-      viewport: { width: 1920, height: 1080 },
-      ignoreHTTPSErrors: true,
-    });
-    
+
+  const todayDayName = getTodayDayName();
+  console.log(`\n=== Today is: ${todayDayName} ===\n`);
+
+  if (todayDayName !== 'Saturday' && todayDayName !== 'Sunday') {
     try {
-      await runTestWithRetry(context, attempt);
-      await context.close();
-      return; // Success
-    } catch (error) {
-      lastError = error as Error;
-      console.error(`\n❌ Attempt ${attempt} failed: ${lastError.message}`);
-      await context.close();
-      
-      if (attempt <= CONFIG.maxRetries) {
-        const waitTime = attempt * 5000;
-        console.log(`   Waiting ${waitTime/1000} seconds before retry...`);
-        await new Promise(r => setTimeout(r, waitTime));
+      let lastError: Error;
+
+      for (let attempt = 1; attempt <= CONFIG.maxRetries + 1; attempt++) {
+        const context = await browser.newContext({
+          userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+          viewport: { width: 1920, height: 1080 },
+          ignoreHTTPSErrors: true,
+        });
+
+        try {
+          await runTestWithRetry(context, attempt);
+          await context.close();
+          return; // Success
+        } catch (error) {
+          lastError = error as Error;
+          console.error(`\n❌ Attempt ${attempt} failed: ${lastError.message}`);
+          await context.close();
+
+          if (attempt <= CONFIG.maxRetries) {
+            const waitTime = attempt * 5000;
+            console.log(`   Waiting ${waitTime / 1000} seconds before retry...`);
+            await new Promise(r => setTimeout(r, waitTime));
+          }
+        }
       }
+
+      throw lastError!;
+    } catch (error) {
+      console.log('Error in main test:', error);
     }
+  } else {
+    console.log('post market is off on Saturday and Sunday, skipping the test.');
+
   }
-  
-  throw lastError!;
+
 });
