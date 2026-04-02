@@ -78,51 +78,59 @@ async function extractFIIDIIActivityData(page: Page): Promise<FIIDIIActivityData
   return withRetry(async () => {
     console.log('\n--- Starting FII/DII Data Extraction ---');
 
-    await page.goto('https://www.moneycontrol.com/stocks/marketstats/fii_dii_activity/index.php', {
-      waitUntil: 'domcontentloaded',
-      timeout: 60000
+    // 👉 Set headers (important for NSE)
+    // await page.setExtraHTTPHeaders({
+    //   "accept-language": "en-US,en;q=0.9",
+    // });
+
+   console.log(' 👉 Go to page');
+   
+    await page.goto("https://www.nseindia.com/reports/fii-dii", {
+      waitUntil: "domcontentloaded",
     });
 
-    await page.waitForLoadState('networkidle');
+    console.log('👉 Wait for table');
+    
+    await page.waitForSelector("#fiidiiTable tbody tr");
 
-    // Handle potential modal
-    try {
-      const noThanksButton = page.getByRole('button', { name: 'No thanks' });
-      await noThanksButton.waitFor({ state: 'visible', timeout: 5000 });
-      await noThanksButton.click();
-      console.log('Modal dismissed.');
-    } catch {
-      console.log('No modal found.');
-    }
+    console.log('👉 Extract data');
+    
+    const result = await page.$$eval("#fiidiiTable tbody tr", (rows) => {
+      const clean = (val: string) => val.replace(/,/g, "").trim();
 
-    // Pick the first visible table body row inside .fidileft
-    const rowLocator = page.locator('.fidileft table tbody tr').first();
+      let data: any = {};
 
-    // Get all cell values (td)
-    const cells = rowLocator.locator('td');
+      rows.forEach((row) => {
+        const cols = row.querySelectorAll("td");
 
-    const values = await cells.allTextContents();
+        const category = cols[0].textContent?.trim(); // DII / FII
+        const date = cols[1].textContent?.trim();
+        const buy = clean(cols[2].textContent || "");
+        const sell = clean(cols[3].textContent || "");
+        const net = clean(cols[4].textContent || "");
 
-    const [
-      DateOfTable,
-      GrossPurchaseFII,
-      GrossSalesFII,
-      NetSalesFII,
-      GrossPurchaseDII,
-      GrossSalesDII,
-      NetSalesDII
-    ] = values;
+        if (category === "FII/FPI") {
+          data.GrossPurchaseFII = buy;
+          data.GrossSalesFII = sell;
+          data.NetSalesFII = net;
+          data.DateOfTable = date;
+        }
 
-    // Trim extra whitespace
-    return {
-      DateOfTable: DateOfTable.trim(),
-      GrossPurchaseFII: GrossPurchaseFII.trim(),
-      GrossSalesFII: GrossSalesFII.trim(),
-      NetSalesFII: NetSalesFII.trim(),
-      GrossPurchaseDII: GrossPurchaseDII.trim(),
-      GrossSalesDII: GrossSalesDII.trim(),
-      NetSalesDII: NetSalesDII.trim()
-    };
+        if (category === "DII") {
+          data.GrossPurchaseDII = buy;
+          data.GrossSalesDII = sell;
+          data.NetSalesDII = net;
+        }
+      });
+
+      return data;
+    });
+
+    console.log("Final Data:", result);
+
+    expect(result).toBeTruthy();
+
+    return result;
   }, 3, 2000, {
     DateOfTable: '',
     GrossPurchaseFII: '',
